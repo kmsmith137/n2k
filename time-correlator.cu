@@ -10,17 +10,22 @@ constexpr int default_nt_inner = 256 * 1024;
 constexpr int default_nt_tot = 256 * 1024;
 constexpr int default_nfreq = 16;
 constexpr int default_nstreams = 2;
+constexpr int default_ncallbacks = 300;
 constexpr int max_nt_outer = 64;
 
 
-static void time_correlator(int nfreq, int nt_outer, int nt_inner, int nstreams)
+static void time_correlator(int nfreq, int nt_outer, int nt_inner, int nstreams, int ncallbacks)
 {
-    cout << "time-correlator: nfreq=" << nfreq << ", nt_outer=" << nt_outer
-	 << ", nt_inner=" << nt_inner << ", nstreams=" << nstreams << endl;
+    cout << "time-correlator:"
+	 << " nt_inner=" << nt_inner
+	 << ", nt_outer=" << nt_outer
+	 << ", nfreq=" << nfreq
+	 << ", nstreams=" << nstreams
+	 << ", ncallbacks=" << ncallbacks
+	 << endl;
 
     ssize_t nstat = constants::num_stations;
     ssize_t nt_tot = nt_outer * nt_inner;
-    ssize_t num_callbacks = 300;
     
     double varr_gb = nstreams * nt_outer * nfreq * pow(nstat,2.) * 2. / pow(2,30.);
     double earr_gb = nstreams * nt_tot * double(nfreq*nstat) / pow(2,30);
@@ -58,7 +63,7 @@ static void time_correlator(int nfreq, int nt_outer, int nt_inner, int nstreams)
     stringstream sp_name;
     sp_name << "n2k (vsamp=" << vsample_sec << ")";
     
-    CudaStreamPool sp(callback, num_callbacks, nstreams, sp_name.str());
+    CudaStreamPool sp(callback, ncallbacks, nstreams, sp_name.str());
     sp.monitor_time("real-time fraction", rt_sec);
     sp.run();
 
@@ -72,11 +77,12 @@ static void usage(bool cond=false)
     if (cond)
 	return;
     
-    cerr << "usage: time-correlator [nt_inner] [nt_outer] [nfreq] [nstreams]\n"
+    cerr << "usage: time-correlator [nt_inner] [nt_outer] [nfreq] [nstreams] [ncallbacks]\n"
 	 << "    default nt_inner = " << default_nt_inner << "\n"
 	 << "    default nt_outer = min(" << max_nt_outer << ", " << default_nt_tot << "/nt_inner)\n"
 	 << "    default nfreq = " << default_nfreq << "\n"
-	 << "    default nstreams = " << default_nstreams
+	 << "    default nstreams = " << default_nstreams << "\n"
+	 << "    default ncallbacks = " << default_ncallbacks << "\n"
 	 << endl;
 
     exit(1);
@@ -85,13 +91,14 @@ static void usage(bool cond=false)
 
 int main(int argc, const char **argv)
 {
-    usage(argc <= 5);
+    usage(argc <= 6);
 
     int nt_inner = (argc >= 2) ? gputils::from_str<int>(argv[1]) : default_nt_inner;
     int nt_outer = (argc >= 3) ? gputils::from_str<int>(argv[2]) : min(max_nt_outer, (default_nt_tot+nt_inner-1)/nt_inner);
     int nfreq = (argc >= 4) ? gputils::from_str<int>(argv[3]) : default_nfreq;
     int nstreams = (argc >= 5) ? gputils::from_str<int>(argv[4]) : default_nstreams;
+    int ncallbacks = (argc >= 6) ? gputils::from_str<int>(argv[5]) : default_ncallbacks;
 	
-    time_correlator(nfreq, nt_outer, nt_inner, nstreams);
+    time_correlator(nfreq, nt_outer, nt_inner, nstreams, ncallbacks);
     return 0;
 }
