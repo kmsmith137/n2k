@@ -179,18 +179,18 @@ shared_ptr<int> precompute_offsets(int emat_tstride)
     int nblocks = constants::threadblocks_per_freq;
     int nwarps = constants::warps_per_block;
     
-    Array<int> ptable_arr({6,nblocks,nwarps,32}, af_zero);
+    Array<int> ptable_arr({nblocks,6,nwarps,32}, af_zero);
 
     for (int blockId = 0; blockId < nblocks; blockId++) {
 	for (int warpId = 0; warpId < nwarps; warpId++) {
 	    for (int laneId = 0; laneId < 32; laneId++) {
 		PointerOffsets p(emat_tstride, blockId, warpId, laneId);
-		ptable_arr.at({0,blockId,warpId,laneId}) = p.ap;
-		ptable_arr.at({1,blockId,warpId,laneId}) = p.bp;
-		ptable_arr.at({2,blockId,warpId,laneId}) = p.gp;
-		ptable_arr.at({3,blockId,warpId,laneId}) = p.sp;
-		ptable_arr.at({4,blockId,warpId,laneId}) = p.vp;
-		ptable_arr.at({5,blockId,warpId,laneId}) = p.vk_minus_vi;
+		ptable_arr.at({blockId,0,warpId,laneId}) = p.ap;
+		ptable_arr.at({blockId,1,warpId,laneId}) = p.bp;
+		ptable_arr.at({blockId,2,warpId,laneId}) = p.gp;
+		ptable_arr.at({blockId,3,warpId,laneId}) = p.sp;
+		ptable_arr.at({blockId,4,warpId,laneId}) = p.vp;
+		ptable_arr.at({blockId,5,warpId,laneId}) = p.vk_minus_vi;
 	    }
 	}
     }

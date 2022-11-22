@@ -491,9 +491,9 @@ struct CorrelatorKernel
 
 	// Initialize pointers.
 	
-	const int n = gridDim.x * blockDim.x;
-	const int i = blockIdx.x * blockDim.x + threadIdx.x;
-	const int f = blockIdx.y;
+	const int f = blockIdx.y;   // frequency index
+	const int n = blockDim.x;   // ptable stride (for length-6 axis)
+	const int i = blockIdx.x * (6*blockDim.x) + threadIdx.x;  // base index in ptable array
 	
 	const int *ap = shmem + ptable[i];
 	const int *bp = shmem + ptable[i+n];
