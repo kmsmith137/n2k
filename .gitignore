@@ -3,3 +3,4 @@
 test-correlator
 time-correlator
 template_instantiations/kernel_*.cu
+scratch
