@@ -2,6 +2,7 @@
 #define _N2K_KERNEL_HPP
 
 #include "n2k.hpp"
+#include "gputils/constexpr_functions.hpp"   // constexpr_is_divisible()
 
 
 namespace n2k {
@@ -13,27 +14,27 @@ namespace n2k {
 // Compile-time parameters:
 //
 //    NS = number of stations (one "station" is a (dish,polarization) pair).
-//    TS = 32-bit stride between time samples in the E-array.
+//    NF = number of frequencies
 //
-// If the E-array is contiguous, then TS = nfreq * NS / 4.
-//
-// The kernel runs faster if (NS,TS) are known at compile time, so we make them template parameters.
+// The kernel runs faster if (NS,NF) are known at compile time, so we make them template parameters.
 // Currently, the template is instantiated for the specific cases:
-//    NS = 128, 1024
-//    TS = 256, 512, 1024, ..., 64K.
 //
-// Additional values of (NS,TS) can easily be instantiated with a one-line change to the Makefile.
-// We currently have no way of adding new values of (NS,TS) at runtime (could use nvrtc for this).
+//    NS=128    NF=1,2,4,8,16,32,64,128,256,512,1024   (CHORD pathfinder is NF=128)
+//    NS=1024   NF=1,2,4,8,16,32,64,128                (Full CHORD is NF=16)
 //
-// Note: Full CHORD is (NS,TS) = (128,4096), and the CHORD pathfinder is (NS,TS)=(1024,4096).
+// Additional values of (NS,NF) can easily be instantiated with a one-line change to the Makefile.
+// We currently have no way of adding new values of (NS,NF) at runtime (could use nvrtc for this).
 
 
-template<int NS, int TS>
+template<int NS, int NF>
 struct CorrelatorKernel
 {
-    static constexpr int emat_fstride = NS/4;     // int32 stride, not bytes
-    static constexpr int vmat_istride = 2*NS;     // int32 stride, not bytes
-    static constexpr int vmat_fstride = 2*NS*NS;  // int32 stride, not bytes
+    static_assert(gputils::constexpr_is_divisible(NS,128));
+    
+    static constexpr int emat_fstride = NS/4;       // int32 stride, not bytes
+    static constexpr int emat_tstride = NF*(NS/4);  // int32 stride, not bytes
+    static constexpr int vmat_istride = 2*NS;       // int32 stride, not bytes
+    static constexpr int vmat_fstride = 2*NS*NS;    // int32 stride, not bytes
 
     
     // --------------------------------------   Misc helpers   -----------------------------------------
@@ -237,6 +238,8 @@ struct CorrelatorKernel
 
     static __device__ const int *prefetch_chunk(const int *__restrict__ gp, int pf_out[8])
     {
+	constexpr int TS = emat_tstride;
+	
 	// I tried using __ldcg() here instead of a normal load (caches in L2 but not L1),
 	// but this turned out to make the kernel slightly slower.
 	
@@ -514,13 +517,9 @@ struct CorrelatorKernel
 	int vk_minus_vi = ptable[i+5*n];
 
 	// Adjust pointer offsets for 'touter'.
-	// const int nfreq = gridDim.y;
-	// constexpr int nfreq = TS / 256;
-	// const int nfreq = gridDim.y;
-	constexpr int nfreq = (4*TS) / NS;  // XXX
 	const int touter = blockIdx.z;
-	gp += ssize_t(touter * nt_inner) * TS;
-	vp += ssize_t(touter * nfreq) * vmat_fstride;
+	gp += ssize_t(touter * nt_inner) * emat_tstride;
+	vp += ssize_t(touter * NF) * vmat_fstride;
 	
 	// Initialize correlator state.
 
@@ -563,23 +562,23 @@ struct CorrelatorKernel
 
 
 // This wrapper is only needed because cuda doesn't allow the static class
-// member function CorrelatorKernel<TS>::kernel_body() to be __global__.
+// member function CorrelatorKernel<NS,NF>::kernel_body() to be __global__.
 
-template<int NS, int TS>
+template<int NS, int NF>
 __global__ void __launch_bounds__(CorrelatorParams::threads_per_block, 1)
 n2k_kernel(int *dst, const int8_t *src, const int *ptable, int ntime)
 {    
-    CorrelatorKernel<NS,TS>::kernel_body(dst, src, ptable, ntime);
+    CorrelatorKernel<NS,NF>::kernel_body(dst, src, ptable, ntime);
 }
 
 
 // The CorrelatorKernel constructor instantiates the kernel and registers it
 // (see kernel_table.cu).
 
-template<int NS, int TS>
-CorrelatorKernel<NS,TS>::CorrelatorKernel()
+template<int NS, int NF>
+CorrelatorKernel<NS,NF>::CorrelatorKernel()
 {
-    register_kernel(NS, TS, n2k_kernel<NS,TS>);
+    register_kernel(NS, NF, n2k_kernel<NS,NF>);
 }
 
 

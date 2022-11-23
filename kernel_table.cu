@@ -10,12 +10,14 @@ namespace n2k {
 #endif
 
 
+// FIXME it would be slightly better to have a per-KernelTableEntry lock, for setting shmem size.
 struct KernelTableEntry
 {
     int nstations = 0;
-    int emat_tstride = 0;
-    mutable bool shmem_attr_set = false;
+    int nfreq = 0;
+    
     Correlator::kernel_t kernel = nullptr;
+    mutable bool shmem_attr_set = false;
 };
 
 
@@ -23,12 +25,16 @@ static vector<KernelTableEntry> kernel_table;
 static mutex kernel_table_lock;
 
 
-Correlator::kernel_t get_kernel(int nstations, int emat_tstride)
+Correlator::kernel_t get_kernel(int nstations, int nfreq)
 {
+    assert(nfreq > 0);
+    assert(nstations > 0);
+    assert((nstations % CorrelatorParams::ns_divisor) == 0);
+    
     unique_lock<mutex> ul(kernel_table_lock);
 
     for (const auto &e: kernel_table) {
-	if ((e.nstations != nstations) || (e.emat_tstride != emat_tstride))
+	if ((e.nstations != nstations) || (e.nfreq != nfreq))
 	    continue;
     
 	// Reference for cudaFuncSetAttribute()
@@ -47,17 +53,19 @@ Correlator::kernel_t get_kernel(int nstations, int emat_tstride)
     }
     
     stringstream ss;
-    ss << "n2k: You have requested a value of 'nfreq' which is not supported."
-       << " Sadly, you will need to recompile with 'template_instantiations/kernel_" << emat_tstride << ".cu";
+    ss << "n2k: You have requested values (nstations,nfreq) which are not supported."
+       << " Sadly, you will need to add 'template_instantiations/kernel_" << nstations << "_" << nfreq << ".o' to the Makefile and recompile."
+       << " In the future, I may do this automatically with nvrtc.";
+    
     throw runtime_error(ss.str());
 }
 
 
-void register_kernel(int nstations, int emat_tstride, Correlator::kernel_t kernel)
+void register_kernel(int nstations, int nfreq, Correlator::kernel_t kernel)
 {
     KernelTableEntry e;
     e.nstations = nstations;
-    e.emat_tstride = emat_tstride;
+    e.nfreq = nfreq;
     e.kernel = kernel;
     
     unique_lock<mutex> ul(kernel_table_lock);

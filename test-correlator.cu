@@ -345,9 +345,9 @@ void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner)
 
     emat = emat.to_gpu();
     Array<int> vmat_gpu({nt_outer,nfreq,nstations,nstations,2}, af_random | af_gpu);
-
+    
     Correlator corr(nstations, nfreq);
-    corr.launch(vmat_gpu, emat, nt_outer, nt_inner, nullptr, true);
+    corr.launch(vmat_gpu, emat, nt_outer, nt_inner, nullptr, true);  // sync=true
     vmat_gpu = vmat_gpu.to_host();
 
     for (int touter = 0; touter < nt_outer; touter++) {
@@ -390,9 +390,32 @@ int main(int argc, char **argv)
     // (nstations, nfreq, f, sa, sb, t, za, ab)
     //    minimal_correlator_test(128, 128, 0, 23, 37, 183, {1,2}, {3,4});  
 
-    test_correlator(128, 128, 8, 2*1024);
-    test_correlator(1024, 8, 2, 16*1024);   // (nstations, nfreq, nt_outer, nt_inner)
-    test_correlator(1024, 16, 4, 4*1024);
+    // Full end-to-end test starts here.
+
+    // test_correlator(128, 8, 2586, 1792);
     
+    std::mt19937 rng(137);
+    const double maxbytes = 2.0e9;  // 2 GB
+
+    // list of pairs (nstations, nfreq_max)
+    vector<pair<int,int>> todo = {{128,1024},{1024,128}};
+    
+    for (auto p: todo) {
+	int nstations = p.first;
+	int nfreq_max = p.second;
+	
+	for (int nfreq = 1; nfreq <= nfreq_max; nfreq *= 2) {
+	    double nbytes_e = nfreq * nstations;         // multiply by (nt_inner * nt_outer)
+	    double nbytes_v = 8.0 * nfreq * nstations * nstations;  // multiply by (nt_outer)
+
+	    int max_multiplier = int((0.9999*maxbytes - nbytes_v) / (256. * nbytes_e));
+	    int nt_inner = 256 * gputils::rand_int(1, min(max_multiplier,10)+1, rng);
+
+	    int max_nt_outer = int(maxbytes / (nt_inner*nbytes_e + nbytes_v));
+	    int nt_outer = gputils::rand_int(1, max_nt_outer+1, rng);
+	    test_correlator(nstations, nfreq, nt_outer, nt_inner);
+	}
+    }
+
     return 0;
 }

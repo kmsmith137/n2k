@@ -32,7 +32,7 @@ CorrelatorParams::CorrelatorParams(int nstations_, int nfreq_) :
 Correlator::Correlator(const CorrelatorParams &params_) : params(params_)
 {
     this->precomputed_offsets = precompute_offsets(params);
-    this->kernel = get_kernel(params.nstations, params.emat_tstride);
+    this->kernel = get_kernel(params.nstations, params.nfreq);
 }
 
 

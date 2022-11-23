@@ -159,10 +159,10 @@ protected:
 
 // Used internally by Correlator constructor
 extern std::shared_ptr<int> precompute_offsets(const CorrelatorParams &params);
-extern Correlator::kernel_t get_kernel(int nstations, int emat_tstride);
+extern Correlator::kernel_t get_kernel(int nstations, int nfreq);
 
 // Used internally to "promote" compile-time argument to runtime argument.
-extern void register_kernel(int nstations, int emat_tstride, Correlator::kernel_t kernel);
+extern void register_kernel(int nstations, int nfreq, Correlator::kernel_t kernel);
 
     
 }  // namespace n2k
