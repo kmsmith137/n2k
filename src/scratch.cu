@@ -1,6 +1,6 @@
 // A placeholder file for debugging
 
-#include "n2k.hpp"
+#include "../include/n2k.hpp"
 
 using namespace std;
 using namespace n2k;

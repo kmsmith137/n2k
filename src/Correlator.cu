@@ -1,5 +1,5 @@
 #include <gputils.hpp>
-#include "n2k.hpp"
+#include "../include/n2k.hpp"
 
 using namespace std;
 using namespace gputils;

@@ -1,7 +1,8 @@
 #include <iostream>
 #include <gputils.hpp>
-#include "n2k.hpp"
-#include "argparse/argparse.hpp"
+
+#include "../include/n2k.hpp"
+#include "../argparse/argparse.hpp"
 
 using namespace std;
 using namespace gputils;

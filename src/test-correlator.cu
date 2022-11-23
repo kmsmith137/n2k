@@ -1,8 +1,9 @@
 #include <complex>
 #include <iostream>
 #include <gputils.hpp>
-#include "n2k.hpp"
-#include "n2k_kernel.hpp"
+
+#include "../include/n2k.hpp"
+#include "../include/n2k_kernel.hpp"
 
 using namespace std;
 using namespace gputils;

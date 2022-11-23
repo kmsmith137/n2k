@@ -13,14 +13,14 @@ SHELL := /bin/bash
 .PHONY: all one asm clean install .FORCE
 
 HFILES = \
-  n2k.hpp \
-  n2k_kernel.hpp
+  include/n2k.hpp \
+  include/n2k_kernel.hpp
 
 # Kernel filename syntax is kernel_{nstations}_{nfreq}.o
 OFILES = \
-  Correlator.o \
-  kernel_table.o \
-  precompute_offsets.o \
+  src/Correlator.o \
+  src/kernel_table.o \
+  src/precompute_offsets.o \
   template_instantiations/kernel_128_1.o \
   template_instantiations/kernel_128_2.o \
   template_instantiations/kernel_128_4.o \
@@ -53,7 +53,8 @@ XFILES = \
   time-correlator \
   scratch
 
-SRCDIRS = . template_instantiations
+# Used in 'make clean', 'make source_files.txt'
+SRCDIRS = . include src template_instantiations
 
 all: $(LIBFILES) $(XFILES)
 
@@ -94,13 +95,13 @@ lib/libn2k.a: $(OFILES)
 	rm -f $@
 	ar rcs $@ $^
 
-test-correlator: test-correlator.o lib/libn2k.a $(GPUTILS_LIBDIR)/libgputils.a
+test-correlator: src/test-correlator.o lib/libn2k.a $(GPUTILS_LIBDIR)/libgputils.a
 	$(NVCC) -o $@ $^
 
-time-correlator: time-correlator.o lib/libn2k.a $(GPUTILS_LIBDIR)/libgputils.a
+time-correlator: src/time-correlator.o lib/libn2k.a $(GPUTILS_LIBDIR)/libgputils.a
 	$(NVCC) -o $@ $^
 
-scratch: scratch.o $(OFILES) lib/libn2k.a $(GPUTILS_LIBDIR)/libgputils.a
+scratch: src/scratch.o $(OFILES) lib/libn2k.a $(GPUTILS_LIBDIR)/libgputils.a
 	$(NVCC) -o $@ $^
 
 install: $(LIBFILES)
