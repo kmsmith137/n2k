@@ -10,19 +10,32 @@ namespace n2k {
 #endif
 
 
-// We define TS to be the (int32) stride between time samples in the E-array.
-// If the E-array is contiguous, then TS = nfreq * nstations / 4.
+// Compile-time parameters:
 //
-// The kernel runs faster if TS is known at compile time, so we make TS a template parameter.
-// Currently, the template is instantiated for specific values TS = 256, 512, 1024, ..., 64K.
-// Additional values of TS can easily be instantiated with a one-line change to the Makefile.
-// We currently have no way of adding new values of TS at runtime (could use nvrtc for this).
+//    NS = number of stations (one "station" is a (dish,polarization) pair).
+//    TS = 32-bit stride between time samples in the E-array.
+//
+// If the E-array is contiguous, then TS = nfreq * NS / 4.
+//
+// The kernel runs faster if (NS,TS) are known at compile time, so we make them template parameters.
+// Currently, the template is instantiated for the specific cases:
+//    NS = 128, 1024
+//    TS = 256, 512, 1024, ..., 64K.
+//
+// Additional values of (NS,TS) can easily be instantiated with a one-line change to the Makefile.
+// We currently have no way of adding new values of (NS,TS) at runtime (could use nvrtc for this).
+//
+// Note: Full CHORD is (NS,TS) = (128,4096), and the CHORD pathfinder is (NS,TS)=(1024,4096).
 
 
-template<int TS>
+template<int NS, int TS>
 struct CorrelatorKernel
 {
+    static constexpr int emat_fstride = NS/4;     // int32 stride, not bytes
+    static constexpr int vmat_istride = 2*NS;     // int32 stride, not bytes
+    static constexpr int vmat_fstride = 2*NS*NS;  // int32 stride, not bytes
 
+    
     // --------------------------------------   Misc helpers   -----------------------------------------
 
 
@@ -31,7 +44,7 @@ struct CorrelatorKernel
 
     static __device__ int negate_4bit(int x)
     {
-	if constexpr (!constants::artificially_remove_negate_4bit) {
+	if constexpr (!CorrelatorParams::artificially_remove_negate_4bit) {
 	    x ^= 0x77777777;
 	    x += 0x11111111;
 	    x ^= 0x88888888;
@@ -152,9 +165,9 @@ struct CorrelatorKernel
     static __device__ void load_A_fragment(int A[2][4], const int *__restrict__ ap)
     {
 	// From overleaf: (r0 r1) <-> (i3 j5) <-> (8 stations, 32 times)
-	constexpr int S0 = n2k::constants::shmem_s8_stride;
-	constexpr int S1 = n2k::constants::shmem_t32_stride;
-	constexpr int SIm = n2k::constants::shmem_reim_stride;
+	constexpr int S0 = CorrelatorParams::shmem_s8_stride;
+	constexpr int S1 = CorrelatorParams::shmem_t32_stride;
+	constexpr int SIm = CorrelatorParams::shmem_reim_stride;
 	
 	// Real part
 	A[0][0] = ap[0];
@@ -173,8 +186,8 @@ struct CorrelatorKernel
     static __device__ void load_B_fragment(int B[3][2], const int *__restrict__ bp)
     {
 	// From overleaf: r0 <-> j5 <-> (32 times)
-	constexpr int S = n2k::constants::shmem_t32_stride;
-	constexpr int SIm = n2k::constants::shmem_reim_stride;
+	constexpr int S = CorrelatorParams::shmem_t32_stride;
+	constexpr int SIm = CorrelatorParams::shmem_reim_stride;
 	
 	// Real part
 	B[0][0] = bp[0];
@@ -238,12 +251,12 @@ struct CorrelatorKernel
     static __device__ void store_prefetched_chunk(int *__restrict__ sp, int x_in[8])
     {
 	// Transpose data ordering in registers.
-	if constexpr (!n2k::constants::artificially_remove_input_shuffle)
+	if constexpr (!CorrelatorParams::artificially_remove_input_shuffle)
 	    transpose_rank8_4bit(x_in);
 	
 	// After transpose: (r0, r1, r2) <-> (ReIm, s1, s2)
-	constexpr int S0 = n2k::constants::shmem_reim_stride;
-	constexpr int S1 = n2k::constants::shmem_s1_stride;
+	constexpr int S0 = CorrelatorParams::shmem_reim_stride;
+	constexpr int S1 = CorrelatorParams::shmem_s1_stride;
 	
 	sp[0] = x_in[0];
 	sp[S0] = x_in[1];
@@ -262,7 +275,7 @@ struct CorrelatorKernel
     
     static __device__ const int *do_initial_prefetch(const int *__restrict__ gp, int *__restrict__ sp, int pf[8])
     {
-	constexpr int S = n2k::constants::shmem_t32_stride;
+	constexpr int S = CorrelatorParams::shmem_t32_stride;
 	
 	int tmp[8];
 
@@ -309,9 +322,9 @@ struct CorrelatorKernel
     static __device__ const int *
     correlate_t64(int V[8][2][2][4], const int *__restrict__ ap, const int *__restrict__ bp, const int *__restrict__ gp, int *__restrict__ sp, int pf[8])
     {
-	constexpr int SA = 2 * n2k::constants::shmem_s8_stride;  // one A-fragment corresponds to 16 stations
-	constexpr int SB = n2k::constants::shmem_s8_stride;
-	constexpr int SS = n2k::constants::shmem_t32_stride;
+	constexpr int SA = 2 * CorrelatorParams::shmem_s8_stride;  // one A-fragment corresponds to 16 stations
+	constexpr int SB = CorrelatorParams::shmem_s8_stride;
+	constexpr int SS = CorrelatorParams::shmem_t32_stride;
     
 	int A[2][2][4];
 	int B[3][2];
@@ -379,7 +392,7 @@ struct CorrelatorKernel
     static __device__ const int *
     correlate_t128(int V[8][2][2][4], const int *__restrict__ ap, const int *__restrict__ bp, const int *__restrict__ gp, int *__restrict__ sp, int pf[8])
     {
-	constexpr int S = 2 * n2k::constants::shmem_t32_stride;
+	constexpr int S = 2 * CorrelatorParams::shmem_t32_stride;
 	constexpr int Q = (P < 2) ? 0 : 2;
 
 	gp = correlate_t64<Q> (V, ap, bp, gp, sp, pf);
@@ -434,9 +447,9 @@ struct CorrelatorKernel
     // The 'V0' and 'V1' args correspond to k=0 and k=8.
     static __device__ void write_V_16_16(int *__restrict__ vp, int V0[2][4], int V1[2][4])
     {
-	constexpr int S = n2k::constants::vmat_istride;
+	constexpr int S = vmat_istride;
 
-	if constexpr (!constants::artificially_remove_output_shuffle) {
+	if constexpr (!CorrelatorParams::artificially_remove_output_shuffle) {
 	    warp_transpose_4(V0[0], V1[0], 0x04);
 	    warp_transpose_4(V0[1], V1[1], 0x04);
 	}
@@ -454,8 +467,8 @@ struct CorrelatorKernel
     
     static __device__ void write_V(int *__restrict__ vp, int V[8][2][2][4], int vk_minus_vi)
     {
-	constexpr int SI = 16 * n2k::constants::vmat_istride;
-	constexpr int SK = 16 * n2k::constants::vmat_kstride;
+	constexpr int SI = 16 * vmat_istride;
+	constexpr int SK = 16 * CorrelatorParams::vmat_kstride;
 
 	if (vk_minus_vi <= -64)
 	    return;
@@ -485,8 +498,6 @@ struct CorrelatorKernel
     static __device__ void
     kernel_body(int *dst, const int8_t *src, const int *ptable, int nt_inner)
     {
-	assert(blockDim.x == n2k::constants::threads_per_block);
-    
 	extern __shared__ int shmem[];
 
 	// Initialize pointers.
@@ -497,16 +508,16 @@ struct CorrelatorKernel
 	
 	const int *ap = shmem + ptable[i];
 	const int *bp = shmem + ptable[i+n];
-	const int *gp = ((const int *) src) + (f * constants::gmem_fstride) + ptable[i+2*n];
+	const int *gp = ((const int *) src) + (f * emat_fstride) + ptable[i+2*n];
 	int *sp = shmem + ptable[i+3*n];
-	int *vp = dst + (f * constants::vmat_fstride) + ptable[i+4*n];
+	int *vp = dst + (f * vmat_fstride) + ptable[i+4*n];
 	int vk_minus_vi = ptable[i+5*n];
 
 	// Adjust pointer offsets for 'touter'.
 	const int touter = blockIdx.z;
 	constexpr int nfreq = TS / 256;   // Assuming time axis is contiguous in input E-array.
 	gp += ssize_t(touter * nt_inner) * TS;
-	vp += ssize_t(touter * nfreq) * constants::vmat_fstride;
+	vp += ssize_t(touter * nfreq) * vmat_fstride;
 	
 	// Initialize correlator state.
 
@@ -519,7 +530,7 @@ struct CorrelatorKernel
 	
 	// Main correlator loop.
 	
-	constexpr int S = 2 * n2k::constants::shmem_t32_stride;
+	constexpr int S = 2 * CorrelatorParams::shmem_t32_stride;
 
 	for (int t = 256; t < nt_inner; t += 256) {
 	    gp = correlate_t128<0> (V, ap, bp, gp, sp+2*S, pf);
@@ -551,21 +562,21 @@ struct CorrelatorKernel
 // This wrapper is only needed because cuda doesn't allow the static class
 // member function CorrelatorKernel<TS>::kernel_body() to be __global__.
 
-template<int TS>
-__global__ void __launch_bounds__(n2k::constants::threads_per_block, 1)
+template<int NS, int TS>
+__global__ void __launch_bounds__(CorrelatorParams::threads_per_block, 1)
 n2k_kernel(int *dst, const int8_t *src, const int *ptable, int ntime)
 {    
-    CorrelatorKernel<TS>::kernel_body(dst, src, ptable, ntime);
+    CorrelatorKernel<NS,TS>::kernel_body(dst, src, ptable, ntime);
 }
 
 
 // The CorrelatorKernel constructor instantiates the kernel and registers it
 // (see kernel_table.cu).
 
-template<int TS>
-CorrelatorKernel<TS>::CorrelatorKernel()
+template<int NS, int TS>
+CorrelatorKernel<NS,TS>::CorrelatorKernel()
 {
-    register_kernel(TS, n2k_kernel<TS>);
+    register_kernel(NS, TS, n2k_kernel<NS,TS>);
 }
 
 

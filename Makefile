@@ -19,15 +19,16 @@ OFILES = \
   Correlator.o \
   kernel_table.o \
   precompute_offsets.o \
-  template_instantiations/kernel_256.o \
-  template_instantiations/kernel_512.o \
-  template_instantiations/kernel_1024.o \
-  template_instantiations/kernel_2048.o \
-  template_instantiations/kernel_4096.o \
-  template_instantiations/kernel_8192.o \
-  template_instantiations/kernel_16384.o \
-  template_instantiations/kernel_32768.o \
-  template_instantiations/kernel_65536.o
+  template_instantiations/kernel_128_4096.o \
+  template_instantiations/kernel_1024_256.o \
+  template_instantiations/kernel_1024_512.o \
+  template_instantiations/kernel_1024_1024.o \
+  template_instantiations/kernel_1024_2048.o \
+  template_instantiations/kernel_1024_4096.o \
+  template_instantiations/kernel_1024_8192.o \
+  template_instantiations/kernel_1024_16384.o \
+  template_instantiations/kernel_1024_32768.o \
+  template_instantiations/kernel_1024_65536.o
 
 XFILES = \
   test-correlator \
@@ -38,7 +39,7 @@ SRCDIRS = . template_instantiations
 all: $(XFILES)
 
 # Compile a single template instantiation, to avoid the full 'make -j all' deluge
-one: template_instantiations/kernel_4096.o
+one: template_instantiations/kernel_1024_4096.o
 
 # Not part of 'make all', needs explicit 'make source_files.txt'
 source_files.txt: .FORCE

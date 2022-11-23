@@ -10,25 +10,45 @@ namespace n2k {
 #endif
 
 
-struct constants
+struct CorrelatorParams
 {
-    // Currently hardcoded
-    static constexpr int num_stations = 1024;   // a "station" is a (dish,polarization) pair
+    // User-specified parameters (at construction)
+    //   nstations = number of stations. A "station" is a dish polarization pair.
+    //   nfreq = number of frequency channels (per GPU)
+    //
+    // Full CHORD: nfreq=16 and nstations=1024 (corresponding to 512 dual-pol dishes).
+    // CHORD pathfinder: nfreq=128 and nstations=128 (corresponding to 64 dual-pol dishes).
+    
+    CorrelatorParams(int nstations, int nfreq);
+    
+    const int nstations;
+    const int nfreq;
+
+    // Derived parameters start here (either computed in constructor, or compile-time constants).
+    // Some of these may become user-specified parameters in the future!
+    
     static constexpr int bit_depth = 4;         // correlator operates on signed (4+4) bit data
     static constexpr int nt_divisor = 256;      // nt_inner must be divisible by this (see below)
+    static constexpr int ns_divisor = 128;      // Number of stations must be divisible by this
 
-    // Visibility matrix strides (int32)
+    // E-array strides (int32, not bytes!!)
+    const int emat_fstride;
+    const int emat_tstride;
+
+    // Visibility matrix strides (int32, not bytes!!)
     static constexpr int vmat_kstride = 2;
-    static constexpr int vmat_istride = 2 * 1024;
-    static constexpr int vmat_fstride = 2 * 1024 * 1024;
-
-    // E-array strides (int32)
-    static constexpr int gmem_fstride = 256;  // FIXME rename
+    const int vmat_istride;
+    const int vmat_fstride;
     
+    // Tiling of visibility matrix by threadblocks.
+    const int ntiles_1d;
+    const int ntiles_2d_offdiag;
+    const int ntiles_2d_tot;
+
     // Block/thread counts
     static constexpr int warps_per_block = 8;
     static constexpr int threads_per_block = 32 * warps_per_block;
-    static constexpr int threadblocks_per_freq = 36;
+    const int threadblocks_per_freq;
 
     // Shared memory layout (see overleaf; all strides are int32)
     static constexpr int shmem_t8_stride = 1;     // Delta(t)=8,16
@@ -55,18 +75,15 @@ struct constants
 class Correlator
 {
 public:
-    // The number of frequency channels (currently 16 per GPU in CHORD) must be
-    // specified at construction.
-    
-    Correlator(int nfreq);
+    Correlator(const CorrelatorParams &params);
+
+    Correlator(int nstations, int nfreq) :
+	Correlator(CorrelatorParams(nstations,nfreq)) { }
 
     // The launch() function below launches the correlator kernel.
     //
-    //  - The number of stations (i.e. (dish,polarization) pairs) is hardcoded to 1024.
-    //    This could be generalized, but right now I'm just concentrating on full CHORD.
-    //
-    //  - Similarly, the electric field input data is assumed to be signed (4+4) bit
-    //    complex.
+    //  - The electric field input data is assumed to be signed (4+4) bit complex.
+    //    In a future update, I may generalize this.
     //
     //  - The time cadence is controlled by two parameters, 'nt_outer' and 'nt_inner'.
     //    The total number of time samples is (nt_outer * nt_inner), and the visibility
@@ -74,9 +91,9 @@ public:
     //
     //  - The 'e_in' array is
     //
-    //       int8[nt_outer*nt_inner][nfreq][nstation]  with all axes contiguous    (*)
+    //       int8[nt_outer*nt_inner][nfreq][nstations]  with all axes contiguous    (*)
     // 
-    //    where we represent complex (4+4) as int8, and nstation is hardcoded to 1024.
+    //    where we represent complex (4+4) as int8.
     //
     //    Note in (*) that the real/imaginary axis is fastest varying, followed by the
     //    station axis, and both these axes are contiguous. These assumptions would be
@@ -87,8 +104,8 @@ public:
     //
     //      int32[nt_outer][nfreq][nstations][nstations][2]     (**)
     //
-    //    where the last axis is Re/Im, all axes are contiguous, nstations=1024, and only visibilities
-    //    (i,j) with (i < j) are computed. That is, we only compute the upper triangle of the visibility
+    //    where the last axis is Re/Im, all axes are contiguous, and only visibilities (i,j) 
+    //    with (i < j) are computed. That is, we only compute the upper triangle of the visibility
     //    matrix. This is okay since the visibility matrix is Hermitian. However, note that the storage
     //    scheme (**) uses twice as much memory as necessary. This is something that I'll improve soon.
     //
@@ -127,7 +144,7 @@ public:
 		int nt_outer, int nt_inner, cudaStream_t stream=nullptr, bool sync=false) const;
     
     // Initialized by constructor.
-    const int nfreq;
+    const CorrelatorParams params;
     
     using kernel_t = void (*)(int *, const int8_t *, const int *, int);
 
@@ -141,11 +158,11 @@ protected:
 
 
 // Used internally by Correlator constructor
-extern std::shared_ptr<int> precompute_offsets(int emat_tstride);
-extern Correlator::kernel_t get_kernel(int emat_tstride);
+extern std::shared_ptr<int> precompute_offsets(const CorrelatorParams &params);
+extern Correlator::kernel_t get_kernel(int nstations, int emat_tstride);
 
 // Used internally to "promote" compile-time argument to runtime argument.
-void register_kernel(int emat_tstride, Correlator::kernel_t kernel);
+extern void register_kernel(int nstations, int emat_tstride, Correlator::kernel_t kernel);
 
     
 }  // namespace n2k

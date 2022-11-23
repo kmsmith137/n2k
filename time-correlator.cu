@@ -9,7 +9,7 @@ using namespace n2k;
 constexpr int default_nt_inner = 256 * 1024;
 constexpr int default_nt_tot = 256 * 1024;
 constexpr int default_nfreq = 16;
-constexpr int default_nstreams = 2;
+constexpr int default_nstreams = 1;
 constexpr int default_ncallbacks = 300;
 constexpr int max_nt_outer = 64;
 
@@ -24,7 +24,7 @@ static void time_correlator(int nfreq, int nt_outer, int nt_inner, int nstreams,
 	 << ", ncallbacks=" << ncallbacks
 	 << endl;
 
-    ssize_t nstat = constants::num_stations;
+    ssize_t nstat = 1024; // XXX
     ssize_t nt_tot = nt_outer * nt_inner;
     
     double varr_gb = nstreams * nt_outer * nfreq * pow(nstat,2.) * 2. / pow(2,30.);
@@ -37,7 +37,7 @@ static void time_correlator(int nfreq, int nt_outer, int nt_inner, int nstreams,
 	 << "Visibility matrix sampling rate: " << vsample_sec << " sec in CHORD\n"
 	 << endl;
     
-    Correlator corr(nfreq);
+    Correlator corr(nstat, nfreq);
     vector<Array<int>> varr(nstreams);
     vector<Array<int8_t>> earr(nstreams);
 

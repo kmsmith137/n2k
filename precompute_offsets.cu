@@ -16,7 +16,7 @@ namespace n2k {
 
 
 struct PointerOffsets {
-    const int emat_tstride;
+    const CorrelatorParams &params;
     const int blockId;
     const int warpId;
     const int laneId;
@@ -34,12 +34,12 @@ struct PointerOffsets {
     int vk_minus_vi = 1000;
     
     
-    __host__ PointerOffsets(int emat_tstride_, int blockId_, int warpId_, int laneId_) :
-	emat_tstride(emat_tstride_), blockId(blockId_), warpId(warpId_), laneId(laneId_)
+    __host__ PointerOffsets(const CorrelatorParams &params_, int blockId_, int warpId_, int laneId_) :
+	params(params_), blockId(blockId_), warpId(warpId_), laneId(laneId_)
     {
 	assert((laneId >= 0) && (laneId < 32));
-	assert((warpId >= 0) && (warpId < constants::warps_per_block));
-	assert((blockId >= 0) && (blockId < constants::threadblocks_per_freq));
+	assert((warpId >= 0) && (warpId < CorrelatorParams::warps_per_block));
+	assert((blockId >= 0) && (blockId < params.threadblocks_per_freq));
 
 	_init_block_data();
 	_init_prefetch_offsets();
@@ -49,15 +49,14 @@ struct PointerOffsets {
     
     __host__ void _init_block_data()
     {
-	static_assert(constants::threadblocks_per_freq == 36);
 
-	// FIXME code below is lazy!
 	// First option is faster.
 #if 1
-	// Faster
-	if (blockId >= 28) {
-	    block_atile = blockId - 28;
-	    block_btile = blockId - 28;
+	int nd = params.ntiles_2d_offdiag;
+
+	if (blockId >= nd) {
+	    block_atile = blockId - nd;
+	    block_btile = blockId - nd;
 	    return;
 	}
 	
@@ -111,7 +110,7 @@ struct PointerOffsets {
 	assert(t8 < 4);
 	
 	gp = 32 * (bflag ? block_btile : block_atile);   // each block_atile/block_btile index corresponds to 128 stations = 32 int32s
-	gp += tpf * emat_tstride;
+	gp += tpf * params.emat_tstride;
 	gp += laneId;
 
 	// Assign 'sp' pointer.
@@ -124,15 +123,15 @@ struct PointerOffsets {
 	assert(s8 < 16);
 	assert(s1 < 8);
 	
-	sp = bflag * constants::shmem_ab_stride;
-	sp += (t32 * constants::shmem_t32_stride) + (t8 * constants::shmem_t8_stride);
-	sp += (s8 * constants::shmem_s8_stride) + (s1 * constants::shmem_s1_stride);
+	sp = bflag * CorrelatorParams::shmem_ab_stride;
+	sp += (t32 * CorrelatorParams::shmem_t32_stride) + (t8 * CorrelatorParams::shmem_t8_stride);
+	sp += (s8 * CorrelatorParams::shmem_s8_stride) + (s1 * CorrelatorParams::shmem_s1_stride);
     }
 
 
     __host__ void _init_warp_tiling()
     {
-	static_assert(constants::warps_per_block == 8);
+	static_assert(CorrelatorParams::warps_per_block == 8);
 
 	// Convert warpId to tile coordinates 0 <= wx < 4 and 0 <= wy < 2.
 	// I tried doing this in two different ways, but don't see a significant speed difference.
@@ -153,8 +152,8 @@ struct PointerOffsets {
 	//     <-> (t8, t16, s1, s2, s4)
 	//     <-> (1, 2, 4, 8, 16) int32s
 
-	ap = (wx * 4 * constants::shmem_s8_stride) + laneId;                    // one x-tile corresponds to 32 stations
-	bp = (wy * 8 * constants::shmem_s8_stride) + laneId + constants::shmem_ab_stride;  // one y-tile corresponds to 64 stations
+	ap = (wx * 4 * CorrelatorParams::shmem_s8_stride) + laneId;                                      // one x-tile corresponds to 32 stations
+	bp = (wy * 8 * CorrelatorParams::shmem_s8_stride) + laneId + CorrelatorParams::shmem_ab_stride;  // one y-tile corresponds to 64 stations
 
 	// Location in visibility matrix
 	// t0 t1 t2 t3 t4 <-> k1 k2 k3 i1 i2
@@ -166,7 +165,7 @@ struct PointerOffsets {
 	int vk = vk_warp + 2*(laneId & 0x7);
 
 	// Assign 'vp' pointer offset.
-	vp = (vi * constants::vmat_istride) + (vk * constants::vmat_kstride);
+	vp = (vi * params.vmat_istride) + (vk * params.vmat_kstride);
 
 	// Assign 'vk_minus_vi' offset.
 	vk_minus_vi = vk_warp - vi_warp;
@@ -174,17 +173,17 @@ struct PointerOffsets {
 };
 
 
-shared_ptr<int> precompute_offsets(int emat_tstride)
+shared_ptr<int> precompute_offsets(const CorrelatorParams &params)
 {
-    int nblocks = constants::threadblocks_per_freq;
-    int nwarps = constants::warps_per_block;
+    int nblocks = params.threadblocks_per_freq;
+    int nwarps = CorrelatorParams::warps_per_block;
     
     Array<int> ptable_arr({nblocks,6,nwarps,32}, af_zero);
 
     for (int blockId = 0; blockId < nblocks; blockId++) {
 	for (int warpId = 0; warpId < nwarps; warpId++) {
 	    for (int laneId = 0; laneId < 32; laneId++) {
-		PointerOffsets p(emat_tstride, blockId, warpId, laneId);
+		PointerOffsets p(params, blockId, warpId, laneId);
 		ptable_arr.at({blockId,0,warpId,laneId}) = p.ap;
 		ptable_arr.at({blockId,1,warpId,laneId}) = p.bp;
 		ptable_arr.at({blockId,2,warpId,laneId}) = p.gp;

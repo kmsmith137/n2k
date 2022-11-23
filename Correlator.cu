@@ -11,12 +11,28 @@ namespace n2k {
 #endif
 
 
-Correlator::Correlator(int nfreq_) : nfreq(nfreq_)
+CorrelatorParams::CorrelatorParams(int nstations_, int nfreq_) :
+    nstations(nstations_),
+    nfreq(nfreq_),
+    emat_fstride(nstations/4),                // int32 stride, not bytes
+    emat_tstride(nfreq * emat_fstride),       // int32 stride, not bytes
+    vmat_istride(2 * nstations),              // int32 stride, not bytes (factor 2 is ReIm)
+    vmat_fstride(2 * nstations * nstations),  // int32 stride, not bytes (factor 2 is ReIm)
+    ntiles_1d(nstations / CorrelatorParams::ns_divisor),
+    ntiles_2d_offdiag((ntiles_1d * (ntiles_1d-1)) / 2),
+    ntiles_2d_tot(ntiles_2d_offdiag + ntiles_1d),
+    threadblocks_per_freq(ntiles_2d_tot)
 {
-    int emat_tstride = nfreq * constants::gmem_fstride;
+    assert(nstations > 0);
+    assert((nstations % CorrelatorParams::ns_divisor) == 0);
+    assert(nfreq > 0);
+}
+
     
-    this->precomputed_offsets = precompute_offsets(emat_tstride);
-    this->kernel = get_kernel(emat_tstride);
+Correlator::Correlator(const CorrelatorParams &params_) : params(params_)
+{
+    this->precomputed_offsets = precompute_offsets(params);
+    this->kernel = get_kernel(params.nstations, params.emat_tstride);
 }
 
 
@@ -24,17 +40,17 @@ void Correlator::launch(int *vis_out, const int8_t *e_in, int nt_outer, int nt_i
 {
     assert(nt_outer > 0);
     assert(nt_inner > 0);
-    assert(nt_inner % constants::nt_divisor == 0);
+    assert(nt_inner % CorrelatorParams::nt_divisor == 0);
     assert(vis_out != nullptr);
     assert(e_in != nullptr);
 
     dim3 nblocks;
-    nblocks.x = constants::threadblocks_per_freq;
-    nblocks.y = nfreq;
+    nblocks.x = params.threadblocks_per_freq;
+    nblocks.y = params.nfreq;
     nblocks.z = nt_outer;
     
-    int nthreads = constants::threads_per_block;
-    int shmem_nbytes = constants::shmem_nbytes;
+    int nthreads = CorrelatorParams::threads_per_block;
+    int shmem_nbytes = CorrelatorParams::shmem_nbytes;
     const int *poffsets = this->precomputed_offsets.get();
     
     kernel <<<nblocks, nthreads, shmem_nbytes, stream >>> (vis_out, e_in, poffsets, nt_inner);
@@ -48,7 +64,8 @@ void Correlator::launch(int *vis_out, const int8_t *e_in, int nt_outer, int nt_i
 void Correlator::launch(Array<int> &vis_out, const Array<int8_t> &e_in, int nt_outer, int nt_inner, cudaStream_t stream, bool sync) const
 {
     int nt_expected = nt_outer * nt_inner;
-    int nstat = constants::num_stations;
+    int nstat = params.nstations;
+    int nfreq = params.nfreq;
     
     if (!e_in.shape_equals({nt_expected,nfreq,nstat})) {
 	stringstream ss;
