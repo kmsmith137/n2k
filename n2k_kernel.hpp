@@ -514,8 +514,11 @@ struct CorrelatorKernel
 	int vk_minus_vi = ptable[i+5*n];
 
 	// Adjust pointer offsets for 'touter'.
+	// const int nfreq = gridDim.y;
+	// constexpr int nfreq = TS / 256;
+	// const int nfreq = gridDim.y;
+	constexpr int nfreq = (4*TS) / NS;  // XXX
 	const int touter = blockIdx.z;
-	constexpr int nfreq = TS / 256;   // Assuming time axis is contiguous in input E-array.
 	gp += ssize_t(touter * nt_inner) * TS;
 	vp += ssize_t(touter * nfreq) * vmat_fstride;
 	

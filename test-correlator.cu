@@ -201,13 +201,11 @@ __host__ int8_t pack_complex44(complex<int> z)
 }
 
 
-__host__ void minimal_correlator_test(int freq, int sa, int sb, int t, complex<int> za, complex<int> zb)
+__host__ void minimal_correlator_test(int nstations, int nfreq, int f, int sa, int sb, int t, complex<int> za, complex<int> zb)
 {
     // Currently hardcoded
-    const int nfreq = 8;
     const int nt_outer = 4;
     const int nt_inner = 1024;
-    const int nstat = 1024;
     const int nt_tot = nt_outer * nt_inner;
     const int touter = int(t / nt_inner);
     
@@ -215,9 +213,9 @@ __host__ void minimal_correlator_test(int freq, int sa, int sb, int t, complex<i
     assert(!CorrelatorParams::artificially_remove_output_shuffle);
     assert(!CorrelatorParams::artificially_remove_negate_4bit);
     
-    assert((freq >= 0) && (freq < nfreq));
-    assert((sa >= 0) && (sa < nstat));
-    assert((sb >= 0) && (sb < nstat));
+    assert((f >= 0) && (f < nfreq));
+    assert((sa >= 0) && (sa < nstations));
+    assert((sb >= 0) && (sb < nstations));
     assert((t >= 0) && (t < nt_outer*nt_inner));
     assert((za.real() >= -7) && (za.real() <= 7));
     assert((za.imag() >= -7) && (za.imag() <= 7));
@@ -231,24 +229,24 @@ __host__ void minimal_correlator_test(int freq, int sa, int sb, int t, complex<i
     int eb = pack_complex44(zb);
     
     cout << "minimal_correlator_test(): start:"
-	 << " freq=" << freq << ", sa=" << sa << ", sb=" << sb << ", t=" << t
+	 << " f=" << f << ", sa=" << sa << ", sb=" << sb << ", t=" << t
 	 << ", za=" << za << ", Ea=" << ea << ", zb=" << zb << ", Eb=" << eb
 	 << endl;
 
-    Correlator corr(nstat, nfreq);
+    Correlator corr(nstations, nfreq);
     
-    Array<int8_t> emat({nt_tot,nfreq,nstat}, af_zero);
-    emat.at({t,freq,sa}) = ea;
-    emat.at({t,freq,sb}) = eb;
+    Array<int8_t> emat({nt_tot,nfreq,nstations}, af_zero);
+    emat.at({t,f,sa}) = ea;
+    emat.at({t,f,sb}) = eb;
     emat = emat.to_gpu();
 
-    Array<int> vmat_cpu({nt_outer,nfreq,nstat,nstat,2}, af_zero);
-    vmat_cpu.at({touter,freq,sa,sa,0}) = (za * conj(za)).real();
-    vmat_cpu.at({touter,freq,sa,sb,0}) = (za * conj(zb)).real();
-    vmat_cpu.at({touter,freq,sa,sb,1}) = (za * conj(zb)).imag();
-    vmat_cpu.at({touter,freq,sb,sb,0}) = (zb * conj(zb)).real();
+    Array<int> vmat_cpu({nt_outer,nfreq,nstations,nstations,2}, af_zero);
+    vmat_cpu.at({touter,f,sa,sa,0}) = (za * conj(za)).real();
+    vmat_cpu.at({touter,f,sa,sb,0}) = (za * conj(zb)).real();
+    vmat_cpu.at({touter,f,sa,sb,1}) = (za * conj(zb)).imag();
+    vmat_cpu.at({touter,f,sb,sb,0}) = (zb * conj(zb)).real();
     
-    Array<int> vmat_gpu({nt_outer,nfreq,nstat,nstat,2}, af_random | af_gpu);
+    Array<int> vmat_gpu({nt_outer,nfreq,nstations,nstations,2}, af_random | af_gpu);
     corr.launch(vmat_gpu, emat, nt_outer, nt_inner, nullptr, true);  // sync=true
     vmat_gpu = vmat_gpu.to_host();
     
@@ -256,8 +254,8 @@ __host__ void minimal_correlator_test(int freq, int sa, int sb, int t, complex<i
 
     for (int to = 0; to < nt_outer; to++) {
 	for (int f = 0; f < nfreq; f++) {
-	    for (int i = 0; i < nstat; i++) {	    
-		for (int k = i; k < nstat; k++) {
+	    for (int i = 0; i < nstations; i++) {	    
+		for (int k = i; k < nstations; k++) {
 		    int cpu_re = vmat_cpu.at({to,f,i,k,0});
 		    int cpu_im = vmat_cpu.at({to,f,i,k,1});
 		    int gpu_re = vmat_gpu.at({to,f,i,k,0});
@@ -389,9 +387,10 @@ int main(int argc, char **argv)
     // the test output is verbose. This can be useful for tracking down bugs,
     // but we don't run it by default.
 
-    // minimal_correlator_test(0, 0, 1, 1024, {1,2}, {3,4});  // (freq, sa, sb, t, za, ab)
+    // (nstations, nfreq, f, sa, sb, t, za, ab)
+    //    minimal_correlator_test(128, 128, 0, 23, 37, 183, {1,2}, {3,4});  
 
-    test_correlator(128, 128, 4, 1024);
+    test_correlator(128, 128, 8, 2*1024);
     test_correlator(1024, 8, 2, 16*1024);   // (nstations, nfreq, nt_outer, nt_inner)
     test_correlator(1024, 16, 4, 4*1024);
     

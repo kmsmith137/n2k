@@ -9,7 +9,7 @@ NVCC=nvcc -std=c++17 -arch=sm_86 -m64 -O3 -I$(GPUTILS_INCDIR) --compiler-options
 SHELL := /bin/bash
 
 .DEFAULT_GOAL: all
-.PHONY: all one clean .FORCE
+.PHONY: all one asm clean .FORCE
 
 HFILES = \
   n2k.hpp \
@@ -30,6 +30,9 @@ OFILES = \
   template_instantiations/kernel_1024_32768.o \
   template_instantiations/kernel_1024_65536.o
 
+# "Special" kernel, used in special targets 'make one' and 'make asm'.
+SPKERN = 1024_4096
+
 XFILES = \
   test-correlator \
   time-correlator
@@ -38,8 +41,11 @@ SRCDIRS = . template_instantiations
 
 all: $(XFILES)
 
-# Compile a single template instantiation, to avoid the full 'make -j all' deluge
-one: template_instantiations/kernel_1024_4096.o
+# Compile only the "special" kernel. Useful when debugging, to avoid the 'make -j all' deluge.
+one: template_instantiations/kernel_$(SPKERN).o
+
+# Generate ptx and sass for the "special" kernel.
+asm: template_instantiations/kernel_$(SPKERN).ptx template_instantiations/kernel_$(SPKERN).sass
 
 # Not part of 'make all', needs explicit 'make source_files.txt'
 source_files.txt: .FORCE
@@ -48,10 +54,16 @@ source_files.txt: .FORCE
 
 clean:
 	rm -f $(XFILES) source_files.txt *~ template_instantiations/*.cu
-	shopt -s nullglob && for d in $(SRCDIRS); do rm -f $$d/*~ $$d/*.o; done
+	shopt -s nullglob && for d in $(SRCDIRS); do rm -f $$d/*~ $$d/*.o $$d/*.ptx $$d/*.sass; done
 
 %.o: %.cu $(HFILES)
 	$(NVCC) -c -o $@ $<
+
+%.ptx: %.o
+	cuobjdump -ptx $< > $@
+
+%.sass: %.o
+	cuobjdump -sass $< > $@
 
 template_instantiations/kernel_%.cu: template_instantiations/make-instantiation.py
 	$< $@
