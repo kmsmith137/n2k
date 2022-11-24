@@ -260,15 +260,29 @@ struct CorrelatorKernel
 	// After transpose: (r0, r1, r2) <-> (ReIm, s1, s2)
 	constexpr int S0 = CorrelatorParams::shmem_reim_stride;
 	constexpr int S1 = CorrelatorParams::shmem_s1_stride;
-	
-	sp[0] = x_in[0];
-	sp[S0] = x_in[1];
-	sp[S1] = x_in[2];
-	sp[S1+S0] = x_in[3];
-	sp[2*S1] = x_in[4];
-	sp[2*S1+S0] = x_in[5];
-	sp[3*S1] = x_in[6];
-	sp[3*S1+S0] = x_in[7];
+
+	if constexpr (CorrelatorParams::real_part_in_low_bits) {
+	    // Real part in low 4 bits, imaginary part in high 4 bits.
+	    sp[0] = x_in[0];
+	    sp[S0] = x_in[1];
+	    sp[S1] = x_in[2];
+	    sp[S1+S0] = x_in[3];
+	    sp[2*S1] = x_in[4];
+	    sp[2*S1+S0] = x_in[5];
+	    sp[3*S1] = x_in[6];
+	    sp[3*S1+S0] = x_in[7];
+	}
+	else {
+	    // Imaginary part in low 4 bits, real part in high 4 bits.
+	    sp[0] = x_in[1];
+	    sp[S0] = x_in[0];
+	    sp[S1] = x_in[3];
+	    sp[S1+S0] = x_in[2];
+	    sp[2*S1] = x_in[5];
+	    sp[2*S1+S0] = x_in[4];
+	    sp[3*S1] = x_in[7];
+	    sp[3*S1+S0] = x_in[6];
+	}
     }
 
     

@@ -59,6 +59,9 @@ struct CorrelatorParams
     static constexpr int shmem_t32_stride = 64 * 33;   // Delta(t)=32,64
     static constexpr int shmem_nbytes = 8 * shmem_t32_stride * 4;   // 256 times, convert int32 -> bytes
 
+    // Convention for packing an int4+4 (Re,Im) pair into an byte. (CHIME/CHORD use 'false' here.)
+    static constexpr bool real_part_in_low_bits = false;
+    
     // These switches will artificially remove an important part of the processing, in order
     // to measure computational overhead of key steps (but making the kernel incorrect!)
     //

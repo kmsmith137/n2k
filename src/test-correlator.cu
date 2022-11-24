@@ -198,7 +198,11 @@ __host__ int8_t pack_complex44(complex<int> z)
 {
     assert((z.real() >= -7) && (z.real() <= 7));
     assert((z.imag() >= -7) && (z.imag() <= 7));
-    return (z.real() & 0xf) | (z.imag() << 4);
+
+    if constexpr (CorrelatorParams::real_part_in_low_bits)
+	return (z.real() & 0xf) | (z.imag() << 4);
+    else
+	return (z.imag() & 0xf) | (z.real() << 4);
 }
 
 
@@ -389,11 +393,9 @@ int main(int argc, char **argv)
     // but we don't run it by default.
 
     // (nstations, nfreq, f, sa, sb, t, za, ab)
-    //    minimal_correlator_test(128, 128, 0, 23, 37, 183, {1,2}, {3,4});  
+    // minimal_correlator_test(128, 128, 0, 23, 37, 183, {1,2}, {3,4});  
 
     // Full end-to-end test starts here.
-
-    // test_correlator(128, 8, 2586, 1792);
     
     std::mt19937 rng(137);
     const double maxbytes = 2.0e9;  // 2 GB
