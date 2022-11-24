@@ -288,7 +288,7 @@ __host__ void minimal_correlator_test(int nstations, int nfreq, int f, int sa, i
 	}
     }
 
-    if (nfail > 1) {
+    if (nfail > 0) {
 	cout << "    Test failed" << endl;
 	exit(1);
     }
