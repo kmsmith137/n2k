@@ -2,7 +2,7 @@
 #include "../include/n2k_kernel.hpp"
 
 using namespace std;
-
+using namespace gputils;
 
 namespace n2k {
 #if 0
@@ -29,7 +29,9 @@ Correlator::kernel_t get_kernel(int nstations, int nfreq)
 {
     assert(nfreq > 0);
     assert(nstations > 0);
-    assert((nstations % CorrelatorParams::ns_divisor) == 0);
+
+    if (nstations % CorrelatorParams::ns_divisor)
+	throw runtime_error("n2k::Correlator::get_kernel(): expected nstations(=" + to_str(nstations) + ") to be a multiple of " + to_str(CorrelatorParams::ns_divisor));
     
     unique_lock<mutex> ul(kernel_table_lock);
 
@@ -53,7 +55,7 @@ Correlator::kernel_t get_kernel(int nstations, int nfreq)
     }
     
     stringstream ss;
-    ss << "n2k: You have requested values (nstations,nfreq) which are not supported."
+    ss << "n2k: You have requested (nstations,nfreq)=(" << nstations << "," << nfreq << "). This pair of values is not supported."
        << " Sadly, you will need to add 'template_instantiations/kernel_" << nstations << "_" << nfreq << ".o' to the Makefile and recompile."
        << " In the future, I may do this automatically with nvrtc.";
     

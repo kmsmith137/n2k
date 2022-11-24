@@ -24,8 +24,10 @@ CorrelatorParams::CorrelatorParams(int nstations_, int nfreq_) :
     threadblocks_per_freq(ntiles_2d_tot)
 {
     assert(nstations > 0);
-    assert((nstations % CorrelatorParams::ns_divisor) == 0);
     assert(nfreq > 0);
+
+    if (nstations % CorrelatorParams::ns_divisor)
+	throw runtime_error("n2k: expected nstations(=" + to_str(nstations) + ") to be a multiple of " + to_str(CorrelatorParams::ns_divisor));
 }
 
     
@@ -40,10 +42,12 @@ void Correlator::launch(int *vis_out, const int8_t *e_in, int nt_outer, int nt_i
 {
     assert(nt_outer > 0);
     assert(nt_inner > 0);
-    assert(nt_inner % CorrelatorParams::nt_divisor == 0);
     assert(vis_out != nullptr);
     assert(e_in != nullptr);
 
+    if (nt_inner % CorrelatorParams::nt_divisor)
+	throw runtime_error("n2k::Correlator::launch: expected nt_inner(=" + to_str(nt_inner) + ") to be a multiple of " + to_str(CorrelatorParams::nt_divisor));
+    
     dim3 nblocks;
     nblocks.x = params.threadblocks_per_freq;
     nblocks.y = params.nfreq;
