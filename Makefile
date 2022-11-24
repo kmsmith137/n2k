@@ -45,7 +45,6 @@ OFILES = \
 SPKERN = 1024_16
 
 LIBFILES = \
-  lib/libn2k.a \
   lib/libn2k.so
 
 XFILES = \
@@ -90,18 +89,19 @@ lib/libn2k.so: $(OFILES)
 	rm -f $@
 	$(NVCC) -shared -o $@ $^
 
-lib/libn2k.a: $(OFILES)
-	@mkdir -p lib
-	rm -f $@
-	ar rcs $@ $^
+#lib/libn2k.a: $(OFILES)
+#	@mkdir -p lib
+#	rm -f $@
+#	ar rcs $@ $^
+#	ranlib $@
 
-test-correlator: src/test-correlator.o lib/libn2k.a $(GPUTILS_LIBDIR)/libgputils.a
+test-correlator: src/test-correlator.o lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
 	$(NVCC) -o $@ $^
 
-time-correlator: src/time-correlator.o lib/libn2k.a $(GPUTILS_LIBDIR)/libgputils.a
+time-correlator: src/time-correlator.o lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
 	$(NVCC) -o $@ $^
 
-scratch: src/scratch.o $(OFILES) lib/libn2k.a $(GPUTILS_LIBDIR)/libgputils.a
+scratch: src/scratch.o $(OFILES) lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
 	$(NVCC) -o $@ $^
 
 install: $(LIBFILES)
