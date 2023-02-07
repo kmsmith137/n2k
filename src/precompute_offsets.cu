@@ -178,7 +178,7 @@ shared_ptr<int> precompute_offsets(const CorrelatorParams &params)
     int nblocks = params.threadblocks_per_freq;
     int nwarps = CorrelatorParams::warps_per_block;
     
-    Array<int> ptable_arr({nblocks,6,nwarps,32}, af_zero);
+    Array<int> ptable_arr({nblocks,6,nwarps,32}, af_rhost | af_zero);
 
     for (int blockId = 0; blockId < nblocks; blockId++) {
 	for (int warpId = 0; warpId < nwarps; warpId++) {

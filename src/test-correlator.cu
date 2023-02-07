@@ -25,7 +25,7 @@ __host__ Array<int> unpack_4bit(const Array<int> &src)
     for (int d = 0; d < src.ndim; d++)
 	dst_shape[d] = src.shape[d];
 
-    Array<int> dst(dst_shape);
+    Array<int> dst(dst_shape, af_rhost);
 
     for (auto ix = dst.ix_start(); dst.ix_valid(ix); dst.ix_next(ix)) {
 	// Extract 4 bits from x, starting at bit b.
@@ -45,7 +45,7 @@ __host__ Array<int> pack_4bit(const Array<int> &src)
     assert(src.ndim >= 2);
     assert(src.shape[src.ndim-1] == 8);
 
-    Array<int> dst(src.ndim-1, &src.shape[0], af_zero);
+    Array<int> dst(src.ndim-1, &src.shape[0], af_rhost | af_zero);
     
     for (auto ix = src.ix_start(); src.ix_valid(ix); src.ix_next(ix)) {
 	// Extract 4 bits from x, starting at bit b.
@@ -63,7 +63,7 @@ __host__ Array<int> pack_4bit(const Array<int> &src)
 __host__ void test_pack_unpack()
 {
     int n = 100;
-    Array<int> a({n}, af_random);
+    Array<int> a({n}, af_rhost | af_random);
     Array<int> b = unpack_4bit(a);
     Array<int> c = pack_4bit(b);
     
@@ -118,7 +118,7 @@ __host__ void test_negate_4bit()
     // i.e. it fails for -8. The loop below generates random input data
     // satisfying this constraint.
 
-    Array<int> src({nsites,8});    
+    Array<int> src({nsites,8}, af_rhost);
     for (int i = 0; i < nsites; i++)
 	for (int j = 0; j < 8; j++)
 	    src.at({i,j}) = rand_int(-7, 8);
@@ -171,7 +171,7 @@ __host__ void test_transpose_rank8_4bit()
 {
     const int nsites = 512;
 
-    Array<int> a({nsites,8}, af_random);
+    Array<int> a({nsites,8}, af_rhost | af_random);
     Array<int> src = unpack_4bit(a);
     
     a = a.to_gpu();
@@ -240,12 +240,12 @@ __host__ void minimal_correlator_test(int nstations, int nfreq, int f, int sa, i
 
     Correlator corr(nstations, nfreq);
     
-    Array<int8_t> emat({nt_tot,nfreq,nstations}, af_zero);
+    Array<int8_t> emat({nt_tot,nfreq,nstations}, af_rhost | af_zero);
     emat.at({t,f,sa}) = ea;
     emat.at({t,f,sb}) = eb;
     emat = emat.to_gpu();
 
-    Array<int> vmat_cpu({nt_outer,nfreq,nstations,nstations,2}, af_zero);
+    Array<int> vmat_cpu({nt_outer,nfreq,nstations,nstations,2}, af_rhost | af_zero);
     vmat_cpu.at({touter,f,sa,sa,0}) = (za * conj(za)).real();
     vmat_cpu.at({touter,f,sa,sb,0}) = (za * conj(zb)).real();
     vmat_cpu.at({touter,f,sa,sb,1}) = (za * conj(zb)).imag();
@@ -312,8 +312,8 @@ void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner)
 	 << ", nt_inner=" << nt_inner
 	 << ")" << endl;
 
-    Array<int> vmat_cpu({nt_outer,nfreq,nstations,nstations,2}, af_zero);
-    Array<int8_t> emat({nt_tot,nfreq,nstations}, af_zero);
+    Array<int> vmat_cpu({nt_outer,nfreq,nstations,nstations,2}, af_rhost | af_zero);
+    Array<int8_t> emat({nt_tot,nfreq,nstations}, af_rhost | af_zero);
 
     vector<int> ix(nstations);
     for (int i = 0; i < nstations; i++)
@@ -350,7 +350,7 @@ void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner)
 
     emat = emat.to_gpu();
     Array<int> vmat_gpu({nt_outer,nfreq,nstations,nstations,2}, af_random | af_gpu);
-    
+
     Correlator corr(nstations, nfreq);
     corr.launch(vmat_gpu, emat, nt_outer, nt_inner, nullptr, true);  // sync=true
     vmat_gpu = vmat_gpu.to_host();
