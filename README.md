@@ -23,4 +23,6 @@ See `n2k.hpp` for more info:
     but uses twice as much memory as necessary.
 
   - I may have reversed real and imaginary parts of an int4+4 (relative to the CHORD conventions)
-  
+
+
+Contact: Kendrick Smith <kmsmith@perimeterinstitute.ca>
