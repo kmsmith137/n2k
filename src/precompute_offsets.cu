@@ -13,6 +13,9 @@ namespace n2k {
 
 
 // -------------------------------------------------------------------------------------------------
+//
+// FIXME currently ptable data is per-thread. I'd like to make it per-warp instead.
+// (Then we could get a speedup by moving the ptable data to constant memory.)
 
 
 struct PointerOffsets {
@@ -30,8 +33,9 @@ struct PointerOffsets {
     int bp = -1;
     int gp = -1;
     int sp = -1;
-    int vp = -1;
-    int vk_minus_vi = 1000;
+
+    int vi_warp = -1;
+    int vk_warp = -1;
     
     
     __host__ PointerOffsets(const CorrelatorParams &params_, int blockId_, int warpId_, int laneId_) :
@@ -158,17 +162,8 @@ struct PointerOffsets {
 	// Location in visibility matrix
 	// t0 t1 t2 t3 t4 <-> k1 k2 k3 i1 i2
 	
-	int vi_warp = 128*block_atile + 32*wx;
-	int vk_warp = 128*block_btile + 64*wy;
-
-	int vi = vi_warp + 2*(laneId >> 3);
-	int vk = vk_warp + 2*(laneId & 0x7);
-
-	// Assign 'vp' pointer offset.
-	vp = (vi * params.vmat_istride) + (vk * params.vmat_kstride);
-
-	// Assign 'vk_minus_vi' offset.
-	vk_minus_vi = vk_warp - vi_warp;
+	vi_warp = 128*block_atile + 32*wx;
+	vk_warp = 128*block_btile + 64*wy;
     }
 };
 
@@ -188,8 +183,8 @@ shared_ptr<int> precompute_offsets(const CorrelatorParams &params)
 		ptable_arr.at({blockId,1,warpId,laneId}) = p.bp;
 		ptable_arr.at({blockId,2,warpId,laneId}) = p.gp;
 		ptable_arr.at({blockId,3,warpId,laneId}) = p.sp;
-		ptable_arr.at({blockId,4,warpId,laneId}) = p.vp;
-		ptable_arr.at({blockId,5,warpId,laneId}) = p.vk_minus_vi;
+		ptable_arr.at({blockId,4,warpId,laneId}) = p.vi_warp;
+		ptable_arr.at({blockId,5,warpId,laneId}) = p.vk_warp;
 	    }
 	}
     }

@@ -460,9 +460,18 @@ struct CorrelatorKernel
 	__stcs((int4 *) p, x);  // streaming write is slightly faster than normal store.
     }
     
+
+    // The arrays V0[q][r], V1[q][r] represent a 16-by-16 complex matrix, with register assignment:
+    //   V01 <-> k3    q <-> ReIm    r0 r1 <-> k0 i3    t0 t1 t2 t3 t4 <-> k1 k2 i0 i1 i2    (*)
+    //
+    // Note that the first step in write_V_16_16() is warp-transposing to register assignment:
+    //   V01 <-> i0    q <-> ReIm    r0 r1 <-> k0 i3    t0 t1 t2 t3 t4 <-> k1 k2 k3 i1 i2    (**)
+    //
+    // The 'vp_thread' argument is confusing! It's the output pointer after applying per-thread
+    // offsets in register assignment (**) [not (*)]. In particular, pointer offsets for (i1,i2)
+    // and (k1,k2,k3) should be applied, but not i0.
     
-    // The 'V0' and 'V1' args correspond to k=0 and k=8.
-    static __device__ void write_V_16_16(int *__restrict__ vp, int V0[2][4], int V1[2][4])
+    static __device__ void write_V_16_16(int *__restrict__ vp_thread, int V0[2][4], int V1[2][4])
     {
 	constexpr int S = vmat_istride;
 
@@ -470,42 +479,55 @@ struct CorrelatorKernel
 	    warp_transpose_4(V0[0], V1[0], 0x04);
 	    warp_transpose_4(V0[1], V1[1], 0x04);
 	}
+
+	// After the warp transposes, the register assignment is:
+	//   V01 <-> i0    q <-> ReIm    r0 r1 <-> k0 i3    t0 t1 t2 t3 t4 <-> k1 k2 k3 i1 i2
 	
-	// r0 r1 r2 r3 <-> k0 i3 ReIm i0
-	
-	write_int4(vp, V0[0][0], V0[1][0], V0[0][1], V0[1][1]);
-	write_int4(vp+S, V1[0][0], V1[1][0], V1[0][1], V1[1][1]);
-	write_int4(vp+8*S, V0[0][2], V0[1][2], V0[0][3], V0[1][3]);
-	write_int4(vp+9*S, V1[0][2], V1[1][2], V1[0][3], V1[1][3]);
+	write_int4(vp_thread, V0[0][0], V0[1][0], V0[0][1], V0[1][1]);
+	write_int4(vp_thread + S, V1[0][0], V1[1][0], V1[0][1], V1[1][1]);
+	write_int4(vp_thread + 8*S, V0[0][2], V0[1][2], V0[0][3], V0[1][3]);
+	write_int4(vp_thread + 9*S, V1[0][2], V1[1][2], V1[0][3], V1[1][3]);
     }
     
 
     // Writes full V-matrix tile (32-by-64 matrix for each warp).
-    
-    static __device__ void write_V(int *__restrict__ vp, int V[8][2][2][4], int vk_minus_vi)
+    // Outer three V indices are V[k//8][i//16][ReIm], and innermost int[4] is a 16-by-8 fragment, with:
+    //    r0 r1 <-> k0 i3    t0 t1 t2 t3 t4 <-> k1 k2 i0 i1 i2
+    //
+    // The 'vp_xbase' argument is the output pointer with:
+    //   - frequency offset (=blockIdx.y) applied
+    //   - touter offset (=blockIdx.z) applied
+    //   - tile indices (=blockIdx.x) not applied
+
+    static __device__ void write_V(int *__restrict__ vp_xbase, int V[8][2][2][4], int vi_warp, int vk_warp)
     {
-	constexpr int SI = 16 * vmat_istride;
-	constexpr int SK = 16 * CorrelatorParams::vmat_kstride;
+	constexpr int SI = 16 * vmat_istride;                     // vmat_istride = 2*NS
+	constexpr int SK = 16 * CorrelatorParams::vmat_kstride;   // vmat_kstride = 2
 
-	if (vk_minus_vi <= -64)
+	// See comment above write_V_16_16() for an explanation of these offsets.
+	int vi_thread = vi_warp + ((threadIdx.x & 0x18) >> 2);   // t3 t4 <-> i1 i2
+	int vk_thread = vk_warp + ((threadIdx.x & 0x7) << 1);    // t0 t1 t2 <-> k1 k2 k3
+	int *vp_thread = vp_xbase + (vi_thread * vmat_istride) + (vk_thread * CorrelatorParams::vmat_kstride);
+
+	if (vk_warp - vi_warp <= -64)
 	    return;
 	
-	write_V_16_16(vp+2*SK, V[4][0], V[5][0]);
-	write_V_16_16(vp+3*SK, V[6][0], V[7][0]);	
-	write_V_16_16(vp+SI+3*SK, V[6][1], V[7][1]);
+	write_V_16_16(vp_thread + 2*SK, V[4][0], V[5][0]);
+	write_V_16_16(vp_thread + 3*SK, V[6][0], V[7][0]);	
+	write_V_16_16(vp_thread + SI+3*SK, V[6][1], V[7][1]);
 
-	if (vk_minus_vi <= -32)
+	if (vk_warp - vi_warp <= -32)
 	    return;
 	
-	write_V_16_16(vp, V[0][0], V[1][0]);
-	write_V_16_16(vp+SK, V[2][0], V[3][0]);
-	write_V_16_16(vp+SI+SK, V[2][1], V[3][1]);
-	write_V_16_16(vp+SI+2*SK, V[4][1], V[5][1]);
+	write_V_16_16(vp_thread, V[0][0], V[1][0]);
+	write_V_16_16(vp_thread + SK, V[2][0], V[3][0]);
+	write_V_16_16(vp_thread + SI+SK, V[2][1], V[3][1]);
+	write_V_16_16(vp_thread + SI+2*SK, V[4][1], V[5][1]);
 
-	if (vk_minus_vi <= 0)
+	if (vk_warp - vi_warp <= 0)
 	    return;
 	
-	write_V_16_16(vp+SI, V[0][1], V[1][1]);
+	write_V_16_16(vp_thread + SI, V[0][1], V[1][1]);
     }
 
 
@@ -527,13 +549,9 @@ struct CorrelatorKernel
 	const int *bp = shmem + ptable[i+n];
 	const int *gp = ((const int *) src) + (f * emat_fstride) + ptable[i+2*n];
 	int *sp = shmem + ptable[i+3*n];
-	int *vp = dst + (f * vmat_fstride) + ptable[i+4*n];
-	int vk_minus_vi = ptable[i+5*n];
 
-	// Adjust pointer offsets for 'touter'.
 	const int touter = blockIdx.z;
 	gp += ssize_t(touter * nt_inner) * emat_tstride;
-	vp += ssize_t(touter * NF) * vmat_fstride;
 	
 	// Initialize correlator state.
 
@@ -562,8 +580,16 @@ struct CorrelatorKernel
 	gp = correlate_t128<2> (V, ap+2*S, bp+2*S, gp, sp, pf);
 	
 	// Write visibility matrix to global memory.
+
+	// vp_xbase: output pointer with
+	//   - frequency offset (=blockIdx.y) applied
+	//   - touter offset (=blockIdx.z) applied
+	//   - tile indices (=blockIdx.x) not applied
+	int *vp_xbase = dst + long(touter*NF+f) * vmat_fstride;
 	
-	write_V(vp, V, vk_minus_vi);
+	int vi_warp = ptable[i+4*n];
+	int vk_warp = ptable[i+5*n];
+	write_V(vp_xbase, V, vi_warp, vk_warp);
     }
 
 
