@@ -16,8 +16,9 @@ CorrelatorParams::CorrelatorParams(int nstations_, int nfreq_) :
     nfreq(nfreq_),
     emat_fstride(nstations/4),                // int32 stride, not bytes
     emat_tstride(nfreq * emat_fstride),       // int32 stride, not bytes
-    vmat_istride(2 * nstations),              // int32 stride, not bytes (factor 2 is ReIm)
-    vmat_fstride(2 * nstations * nstations),  // int32 stride, not bytes (factor 2 is ReIm)
+    vmat_ntiles(((nstations/16) * (nstations/16+1))/2),
+    vmat_fstride(vmat_ntiles * 16*16*2),      // int32 stride, not int32+32
+    vmat_tstride(nfreq * vmat_fstride),       // int32 stride, not int32+32
     ntiles_1d(nstations / CorrelatorParams::ns_divisor),
     ntiles_2d_offdiag((ntiles_1d * (ntiles_1d-1)) / 2),
     ntiles_2d_tot(ntiles_2d_offdiag + ntiles_1d),
@@ -68,6 +69,7 @@ void Correlator::launch(int *vis_out, const int8_t *e_in, int nt_outer, int nt_i
 void Correlator::launch(Array<int> &vis_out, const Array<int8_t> &e_in, int nt_outer, int nt_inner, cudaStream_t stream, bool sync) const
 {
     int nt_expected = nt_outer * nt_inner;
+    int vmat_ntiles = params.vmat_ntiles;
     int nstat = params.nstations;
     int nfreq = params.nfreq;
     
@@ -78,18 +80,18 @@ void Correlator::launch(Array<int> &vis_out, const Array<int8_t> &e_in, int nt_o
 	   << ", got shape=" << e_in.shape_str();
 	throw runtime_error(ss.str());
     }
-			   
-    bool vflag1 = vis_out.shape_equals({nt_outer, nfreq, nstat, nstat, 2});
-    bool vflag2 = vis_out.shape_equals({nfreq, nstat, nstat, 2});
+    
+    bool vflag1 = vis_out.shape_equals({nt_outer, nfreq, vmat_ntiles, 16, 16, 2});
+    bool vflag2 = vis_out.shape_equals({nfreq, vmat_ntiles, 16, 16, 2});
     bool vshape_ok = vflag1 || (vflag2 && (nt_outer == 1));
 
     if (!vshape_ok) {
 	stringstream ss;
 	ss << "Correlator::launch(nfreq=" << nfreq << ", nt_outer=" << nt_outer << ", nt_inner=" << nt_inner << ")"
-	   << ": expected vmat shape=(" << nt_outer << "," << nfreq << "," << nstat << "," << nstat << ",2" << ")";
+	   << ": expected vmat shape=(" << nt_outer << "," << nfreq << "," << vmat_ntiles << ",16,16,2" << ")";
 
 	if (nt_outer == 1)
-	    ss << " or shape=(" << nfreq << "," << nstat << "," << nstat << ",2" << ")";
+	    ss << " or shape=(" << nfreq << "," << vmat_ntiles << "16,16,2" << ")";
 
 	ss << ", got shape=" << vis_out.shape_str();
 	throw runtime_error(ss.str());

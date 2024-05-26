@@ -211,8 +211,10 @@ __host__ void minimal_correlator_test(int nstations, int nfreq, int f, int sa, i
     // Currently hardcoded
     const int nt_outer = 4;
     const int nt_inner = 1024;
+    
     const int nt_tot = nt_outer * nt_inner;
     const int touter = int(t / nt_inner);
+    const int nvtiles = ((nstations/16) * (nstations/16+1)) / 2;
     
     assert(!CorrelatorParams::artificially_remove_input_shuffle);
     assert(!CorrelatorParams::artificially_remove_output_shuffle);
@@ -227,14 +229,22 @@ __host__ void minimal_correlator_test(int nstations, int nfreq, int f, int sa, i
     assert((zb.real() >= -7) && (zb.real() <= 7));
     assert((zb.imag() >= -7) && (zb.imag() <= 7));
     
-    assert(sa <= sb);
-    assert((sa < sb) || (za == zb));
+    assert(sa >= sb);
+    assert((sa > sb) || (za == zb));
     
     int ea = pack_complex44(za);
     int eb = pack_complex44(zb);
+    int ahi = sa >> 4;
+    int bhi = sb >> 4;
+    int alo = sa & 0xf;
+    int blo = sb & 0xf;
+    int taa = (ahi*(ahi+1))/2 + ahi;
+    int tab = (ahi*(ahi+1))/2 + bhi;
+    int tbb = (bhi*(bhi+1))/2 + bhi;
     
     cout << "minimal_correlator_test(): start:"
-	 << " f=" << f << ", sa=" << sa << ", sb=" << sb << ", t=" << t
+	 << " nstations=" << nstations << ", nfreq=" << nfreq
+	 << ", f=" << f << ", sa=" << sa << ", sb=" << sb << ", t=" << t
 	 << ", za=" << za << ", Ea=" << ea << ", zb=" << zb << ", Eb=" << eb
 	 << endl;
 
@@ -245,13 +255,18 @@ __host__ void minimal_correlator_test(int nstations, int nfreq, int f, int sa, i
     emat.at({t,f,sb}) = eb;
     emat = emat.to_gpu();
 
-    Array<int> vmat_cpu({nt_outer,nfreq,nstations,nstations,2}, af_rhost | af_zero);
-    vmat_cpu.at({touter,f,sa,sa,0}) = (za * conj(za)).real();
-    vmat_cpu.at({touter,f,sa,sb,0}) = (za * conj(zb)).real();
-    vmat_cpu.at({touter,f,sa,sb,1}) = (za * conj(zb)).imag();
-    vmat_cpu.at({touter,f,sb,sb,0}) = (zb * conj(zb)).real();
+    Array<int> vmat_cpu({nt_outer,nfreq,nvtiles,16,16,2}, af_rhost | af_zero);
+    vmat_cpu.at({touter,f,taa,alo,alo,0}) = (za * conj(za)).real();
+    vmat_cpu.at({touter,f,tbb,blo,blo,0}) = (zb * conj(zb)).real();
+    vmat_cpu.at({touter,f,tab,alo,blo,0}) = (za * conj(zb)).real();
+    vmat_cpu.at({touter,f,tab,alo,blo,1}) = (za * conj(zb)).imag();
+
+    if (ahi == bhi) {
+	vmat_cpu.at({touter,f,tab,blo,alo,0}) = (zb * conj(za)).real();
+	vmat_cpu.at({touter,f,tab,blo,alo,1}) = (zb * conj(za)).imag();
+    }
     
-    Array<int> vmat_gpu({nt_outer,nfreq,nstations,nstations,2}, af_random | af_gpu);
+    Array<int> vmat_gpu({nt_outer,nfreq,nvtiles,16,16,2}, af_random | af_gpu);
     corr.launch(vmat_gpu, emat, nt_outer, nt_inner, nullptr, true);  // sync=true
     vmat_gpu = vmat_gpu.to_host();
     
@@ -259,29 +274,31 @@ __host__ void minimal_correlator_test(int nstations, int nfreq, int f, int sa, i
 
     for (int to = 0; to < nt_outer; to++) {
 	for (int f = 0; f < nfreq; f++) {
-	    for (int i = 0; i < nstations; i++) {	    
-		for (int k = i; k < nstations; k++) {
-		    int cpu_re = vmat_cpu.at({to,f,i,k,0});
-		    int cpu_im = vmat_cpu.at({to,f,i,k,1});
-		    int gpu_re = vmat_gpu.at({to,f,i,k,0});
-		    int gpu_im = vmat_gpu.at({to,f,i,k,1});
+	    for (int vt = 0; vt < nvtiles; vt++) {
+		for (int i = 0; i < 16; i++) {
+		    for (int k = 0; k < 16; k++) {
+			int cpu_re = vmat_cpu.at({to,f,vt,i,k,0});
+			int cpu_im = vmat_cpu.at({to,f,vt,i,k,1});
+			int gpu_re = vmat_gpu.at({to,f,vt,i,k,0});
+			int gpu_im = vmat_gpu.at({to,f,vt,i,k,1});
 
-		    if ((cpu_re == 0) && (cpu_im == 0) && (gpu_re == 0) && (gpu_im == 0))
-			continue;
+			if ((cpu_re == 0) && (cpu_im == 0) && (gpu_re == 0) && (gpu_im == 0))
+			    continue;
 
-		    bool fail = (cpu_re != gpu_re) || (cpu_im != gpu_im);
+			bool fail = (cpu_re != gpu_re) || (cpu_im != gpu_im);
 
-		    cout << "    " << (fail ? "FAILED" : "looks good")
-			 << ": at touter=" << to << ", f=" << f << ", i=" << i << ", k=" << k << ": "
-			 << "expected (re,im)=(" << cpu_re << "," << cpu_im << "), "
-			 << "got (re,im)=(" << gpu_re << "," << gpu_im << ")" << endl;
-		    
-		    if (fail)
-			nfail++;
+			cout << "    " << (fail ? "FAILED" : "looks good")
+			     << ": at touter=" << to << ", f=" << f << ", vt=" << vt << ", i=" << i << ", k=" << k << ": "
+			     << "expected (re,im)=(" << cpu_re << "," << cpu_im << "), "
+			     << "got (re,im)=(" << gpu_re << "," << gpu_im << ")" << endl;
+			
+			if (fail)
+			    nfail++;
 		
-		    if (nfail >= 32) {
-			cout << "    Reached threshold failure count; aborting test" << endl;
-			exit(1);
+			if (nfail >= 32) {
+			    cout << "    Reached threshold failure count; aborting test" << endl;
+			    exit(1);
+			}
 		    }
 		}
 	    }
@@ -297,10 +314,11 @@ __host__ void minimal_correlator_test(int nstations, int nfreq, int f, int sa, i
 }
 
 
-void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner)
+void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner, int M=10)
 {
     const int nt_tot = (nt_outer * nt_inner);
-
+    const int nvtiles = ((nstations/16) * (nstations/16+1)) / 2;
+    
     assert(!CorrelatorParams::artificially_remove_input_shuffle);
     assert(!CorrelatorParams::artificially_remove_output_shuffle);
     assert(!CorrelatorParams::artificially_remove_negate_4bit);
@@ -312,14 +330,13 @@ void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner)
 	 << ", nt_inner=" << nt_inner
 	 << ")" << endl;
 
-    Array<int> vmat_cpu({nt_outer,nfreq,nstations,nstations,2}, af_rhost | af_zero);
+    Array<int> vmat_cpu({nt_outer,nfreq,nvtiles,16,16,2}, af_rhost | af_zero);
     Array<int8_t> emat({nt_tot,nfreq,nstations}, af_rhost | af_zero);
 
     vector<int> ix(nstations);
     for (int i = 0; i < nstations; i++)
 	ix[i] = i;
 
-    constexpr int M = 10;
     vector<complex<int>> z(M);
 
     for (int touter = 0; touter < nt_outer; touter++) {
@@ -338,10 +355,20 @@ void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner)
 		}
 
 		for (int i = 0; i < M; i++) {
+		    int ahi = ix[i] >> 4;
+		    int alo = ix[i] & 0xf;
+		    
 		    for (int j = 0; j < M; j++) {
+			int bhi = ix[j] >> 4;
+			int blo = ix[j] & 0xf;
+
+			if (ahi < bhi)
+			    continue;
+
+			int vt = (ahi*(ahi+1))/2 + bhi;			
 			complex<int> zz = z[i] * conj(z[j]);
-			vmat_cpu.at({touter,f,ix[i],ix[j],0}) += zz.real();
-			vmat_cpu.at({touter,f,ix[i],ix[j],1}) += zz.imag();
+			vmat_cpu.at({touter,f,vt,alo,blo,0}) += zz.real();
+			vmat_cpu.at({touter,f,vt,alo,blo,1}) += zz.imag();
 		    }
 		}
 	    }
@@ -349,7 +376,7 @@ void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner)
     }
 
     emat = emat.to_gpu();
-    Array<int> vmat_gpu({nt_outer,nfreq,nstations,nstations,2}, af_random | af_gpu);
+    Array<int> vmat_gpu({nt_outer,nfreq,nvtiles,16,16,2}, af_random | af_gpu);
 
     Correlator corr(nstations, nfreq);
     corr.launch(vmat_gpu, emat, nt_outer, nt_inner, nullptr, true);  // sync=true
@@ -357,18 +384,20 @@ void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner)
 
     for (int touter = 0; touter < nt_outer; touter++) {
 	for (int f = 0; f < nfreq; f++) {
-	    for (int i = 0; i < nstations; i++) {
-		for (int k = i; k < nstations; k++) {
-		    complex<int> vcpu = complex<int> (vmat_cpu.at({touter,f,i,k,0}), vmat_cpu.at({touter,f,i,k,1}));
-		    complex<int> vgpu = complex<int> (vmat_gpu.at({touter,f,i,k,0}), vmat_gpu.at({touter,f,i,k,1}));
+	    for (int vt = 0; vt < nvtiles; vt++) {
+		for (int i = 0; i < 16; i++) {
+		    for (int k = i; k < 16; k++) {
+			complex<int> vcpu = complex<int> (vmat_cpu.at({touter,f,vt,i,k,0}), vmat_cpu.at({touter,f,vt,i,k,1}));
+			complex<int> vgpu = complex<int> (vmat_gpu.at({touter,f,vt,i,k,0}), vmat_gpu.at({touter,f,vt,i,k,1}));
 		    
-		    if (vcpu != vgpu) {
-			cout << "test_correlator() failed at touter=" << touter
-			     << ", f=" << f << ", i=" << i << ", k=" << k
-			     << ": vcpu = " << vcpu << ", vgpu = " << vgpu
-			     << endl;
-			
-			exit(1);
+			if (vcpu != vgpu) {
+			    cout << "test_correlator() failed at touter=" << touter
+				 << ", f=" << f << ", vt=" << vt << ", i=" << i << ", k=" << k
+				 << ": vcpu = " << vcpu << ", vgpu = " << vgpu
+				 << endl;
+			    
+			    exit(1);
+			}
 		    }
 		}
 	    }
@@ -393,7 +422,8 @@ int main(int argc, char **argv)
     // but we don't run it by default.
 
     // (nstations, nfreq, f, sa, sb, t, za, ab)
-    // minimal_correlator_test(128, 128, 0, 23, 37, 183, {1,2}, {3,4});  
+    // minimal_correlator_test(128, 128, 3, 37, 23, 183, {1,2}, {3,4});
+    // minimal_correlator_test(1024, 8, 5, 335, 159, 137, {1,2}, {3,4});
 
     // Full end-to-end test starts here.
     
@@ -406,10 +436,11 @@ int main(int argc, char **argv)
     for (auto p: todo) {
 	int nstations = p.first;
 	int nfreq_max = p.second;
+	int nvtiles = ((nstations/16) * (nstations/16+1)) / 2;
 	
 	for (int nfreq = 1; nfreq <= nfreq_max; nfreq *= 2) {
-	    double nbytes_e = nfreq * nstations;         // multiply by (nt_inner * nt_outer)
-	    double nbytes_v = 8.0 * nfreq * nstations * nstations;  // multiply by (nt_outer)
+	    double nbytes_e = nfreq * nstations;           // multiply by (nt_inner * nt_outer)
+	    double nbytes_v = 2048.0 * nfreq * nvtiles;    // multiply by (nt_outer)
 
 	    int max_multiplier = int((0.9999*maxbytes - nbytes_v) / (256. * nbytes_e));
 	    int nt_inner = 256 * gputils::rand_int(1, min(max_multiplier,10)+1, rng);

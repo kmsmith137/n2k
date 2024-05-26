@@ -65,14 +65,14 @@ struct PointerOffsets {
 	}
 	
 	// FIXME lazy
-	block_atile = 0;
-	block_btile = 1;
+	block_atile = 1;
+	block_btile = 0;
 
 	for (int c = 0; c < blockId; c++) {
-	    block_atile++;
-	    if (block_atile >= block_btile) {
-		block_atile = 0;
-		block_btile++;
+	    block_btile++;
+	    if (block_btile >= block_atile) {
+		block_btile = 0;
+		block_atile++;
 	    }
 	}
 #else
@@ -81,11 +81,11 @@ struct PointerOffsets {
 	block_btile = 0;
 
 	for (int c = 0; c < blockId; c++) {
-	    if (block_atile < block_btile)
-		block_atile++;
-	    else {
-		block_atile = 0;
+	    if (block_btile < block_atile)
 		block_btile++;
+	    else {
+		block_btile = 0;
+		block_atile++;
 	    }
 	}
 #endif
@@ -159,9 +159,7 @@ struct PointerOffsets {
 	ap = (wx * 4 * CorrelatorParams::shmem_s8_stride) + laneId;                                      // one x-tile corresponds to 32 stations
 	bp = (wy * 8 * CorrelatorParams::shmem_s8_stride) + laneId + CorrelatorParams::shmem_ab_stride;  // one y-tile corresponds to 64 stations
 
-	// Location in visibility matrix
-	// t0 t1 t2 t3 t4 <-> k1 k2 k3 i1 i2
-	
+	// Output visibility matrix
 	vi_warp = 128*block_atile + 32*wx;
 	vk_warp = 128*block_btile + 64*wy;
     }

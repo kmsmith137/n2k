@@ -11,12 +11,12 @@ using namespace n2k;
 
 struct TimingParams
 {
-    ssize_t nstations = 1024;
-    ssize_t nfreq = 16;
-    ssize_t nt_inner = 256 * 1024;
-    ssize_t nt_tot = 256 * 1024;
-    ssize_t nstreams = 1;
-    ssize_t ncallbacks = 300;
+    long nstations = 1024;
+    long nfreq = 16;
+    long nt_inner = 256 * 1024;
+    long nt_tot = 256 * 1024;
+    long nstreams = 1;
+    long ncallbacks = 300;
     bool randomize = false;
 
     // Defaults
@@ -57,18 +57,18 @@ struct TimingParams
 
 	program.parse_args(argc, argv);
 
-	// Note: we use gputils::from_str<ssize_t>(program.get(xx)) instead of program.get<ssize_t>(xx), since the latter segfaults!
-	nstations = gputils::from_str<ssize_t> (program.get("--nstations"));
+	// Note: we use gputils::from_str<long>(program.get(xx)) instead of program.get<long>(xx), since the latter segfaults!
+	nstations = gputils::from_str<long> (program.get("--nstations"));
 	assert(nstations > 0);
 	assert((16384 % nstations) == 0);
 	
-	nfreq = program.is_used("--nfreq") ? gputils::from_str<ssize_t> (program.get("--nfreq")) : (16384/nstations);
+	nfreq = program.is_used("--nfreq") ? gputils::from_str<long> (program.get("--nfreq")) : (16384/nstations);
 	assert(nfreq > 0);
 	
-	nt_inner = gputils::from_str<ssize_t> (program.get("--nt-inner"));
-	nt_tot = gputils::from_str<ssize_t> (program.get("--nt-tot"));	
-	nstreams = gputils::from_str<ssize_t> (program.get("--nstreams"));
-	ncallbacks = gputils::from_str<ssize_t> (program.get("--ncallbacks"));
+	nt_inner = gputils::from_str<long> (program.get("--nt-inner"));
+	nt_tot = gputils::from_str<long> (program.get("--nt-tot"));	
+	nstreams = gputils::from_str<long> (program.get("--nstreams"));
+	ncallbacks = gputils::from_str<long> (program.get("--ncallbacks"));
 	randomize = (program["--randomize"] == true);
 	
 	assert(nt_tot > 0);
@@ -82,12 +82,13 @@ struct TimingParams
 
 static void time_correlator(const TimingParams &params)
 {
-    ssize_t nstat = params.nstations;
-    ssize_t nfreq = params.nfreq;
-    ssize_t nt_inner = params.nt_inner;
-    ssize_t nt_tot = params.nt_tot;
-    ssize_t nstreams = params.nstreams;
-    ssize_t ncallbacks = params.ncallbacks;
+    long nstat = params.nstations;
+    long nfreq = params.nfreq;
+    long nt_inner = params.nt_inner;
+    long nt_tot = params.nt_tot;
+    long nstreams = params.nstreams;
+    long ncallbacks = params.ncallbacks;
+    long nvtiles = ((nstat/16) * (nstat/16+1)) / 2;
     
     cout << "time-correlator:"
 	 << " nstations=" << nstat
@@ -105,12 +106,13 @@ static void time_correlator(const TimingParams &params)
     assert(nt_tot > 0);
     assert((nt_tot % nt_inner) == 0);
     
-    ssize_t nt_outer = nt_tot / nt_inner;
-    double varr_gb = nstreams * nt_outer * nfreq * pow(nstat,2.) * 2. / pow(2,30.);
+    long nt_outer = nt_tot / nt_inner;
+    double varr_gb = nstreams * nt_outer * nfreq * nvtiles * 2048. / pow(2,30.);
     double earr_gb = nstreams * nt_tot * double(nfreq*nstat) / pow(2,30);
     // double rt_sec = (nfreq/16.) * (nt_tot * 1.707e-6);  // CHORD: 16 freqs per gpu, 1.707 usec samples
 
-    // In CHORD, time samples are 1.707 usec, and
+    // In CHORD, time samples are 1.707 usec
+    // (FIXME no longer true -- need to change some numbers here)
     double chord_tsamp = 1.707e-6;      // CHORD: 1.707 usec time samples
     double chord_samp_nbytes = 16384.;  // CHORD: 16K E-array bytes/sample
     double chord_vsamp = nt_inner * 1.707e-6;
@@ -127,7 +129,7 @@ static void time_correlator(const TimingParams &params)
     int earr_flags = params.randomize ? (af_random | af_gpu) : (af_zero | af_gpu);
 
     for (int i = 0; i < nstreams; i++) {
-	varr[i] = Array<int> ({nt_outer, nfreq, nstat, nstat, 2}, af_zero | af_gpu);
+	varr[i] = Array<int> ({nt_outer, nfreq, nvtiles, 16, 16, 2}, af_zero | af_gpu);
 	earr[i] = Array<int8_t> ({nt_tot, nfreq, nstat}, earr_flags);
     }
 
