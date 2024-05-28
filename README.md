@@ -19,10 +19,4 @@ See `n2k.hpp` for more info:
 
   - The kernel will segfault if run on a GPU which is not the cuda default device.
 
-  - We currently use a memory layout for the output visibility matrix which is simple,
-    but uses twice as much memory as necessary.
-
-  - I may have reversed real and imaginary parts of an int4+4 (relative to the CHORD conventions)
-
-
 Contact: Kendrick Smith <kmsmith@perimeterinstitute.ca>
