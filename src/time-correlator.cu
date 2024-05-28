@@ -80,6 +80,15 @@ struct TimingParams
 };
 
 
+static Array<uint> make_rfimask(long nfreq, long nt_tot)
+{
+    assert((nt_tot % 32) == 0);
+    Array<uint> rfimask({nfreq, nt_tot/32}, af_rhost);
+    memset(rfimask.data, 0xff, rfimask.size * sizeof(uint));
+    return rfimask.to_gpu();
+}
+
+
 static void time_correlator(const TimingParams &params)
 {
     long nstat = params.nstations;
@@ -126,17 +135,19 @@ static void time_correlator(const TimingParams &params)
     Correlator corr(nstat, nfreq);
     vector<Array<int>> varr(nstreams);
     vector<Array<int8_t>> earr(nstreams);
+    vector<Array<uint>> rfimask(nstreams);
     int earr_flags = params.randomize ? (af_random | af_gpu) : (af_zero | af_gpu);
 
     for (int i = 0; i < nstreams; i++) {
 	varr[i] = Array<int> ({nt_outer, nfreq, nvtiles, 16, 16, 2}, af_zero | af_gpu);
 	earr[i] = Array<int8_t> ({nt_tot, nfreq, nstat}, earr_flags);
+	rfimask[i] = make_rfimask(nfreq, nt_tot);
     }
 
     cout << "The first few kernels run slow, for reasons I haven't understood yet!\n"
 	 << "To mitigate this, the first kernel will be untimed.\n" << endl;
     
-    corr.launch(varr[0], earr[0], nt_outer, nt_inner, nullptr, true);
+    corr.launch(varr[0], earr[0], rfimask[0], nt_outer, nt_inner, nullptr, true);
 
     cout << "Now running timed kernels. The first few kernels will be a few percent\n"
 	 << "slower than the long-run average, but the timing will quickly settle down.\n"
@@ -144,7 +155,7 @@ static void time_correlator(const TimingParams &params)
 
     auto callback = [&](const CudaStreamPool &pool, cudaStream_t stream, int istream)
 	{
-	    corr.launch(varr[istream], earr[istream], nt_outer, nt_inner, stream);
+	    corr.launch(varr[istream], earr[istream], rfimask[istream], nt_outer, nt_inner, stream);
 	};
     
     stringstream sp_name;

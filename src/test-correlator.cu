@@ -139,7 +139,6 @@ __host__ void test_negate_4bit()
 }
 
 
-
 // -------------------------------------------------------------------------------------------------
 //
 // transpose_rank8_4bit() testing
@@ -206,7 +205,7 @@ __host__ int8_t pack_complex44(complex<int> z)
 }
 
 
-__host__ void minimal_correlator_test(int nstations, int nfreq, int f, int sa, int sb, int t, complex<int> za, complex<int> zb)
+__host__ void minimal_correlator_test(int nstations, int nfreq, int f, int sa, int sb, int t, complex<int> za, complex<int> zb, bool rfi_bit=true)
 {
     // Currently hardcoded
     const int nt_outer = 4;
@@ -246,29 +245,42 @@ __host__ void minimal_correlator_test(int nstations, int nfreq, int f, int sa, i
 	 << " nstations=" << nstations << ", nfreq=" << nfreq
 	 << ", f=" << f << ", sa=" << sa << ", sb=" << sb << ", t=" << t
 	 << ", za=" << za << ", Ea=" << ea << ", zb=" << zb << ", Eb=" << eb
-	 << endl;
+	 << ", rfi_bit=" << rfi_bit << endl;
 
     Correlator corr(nstations, nfreq);
     
     Array<int8_t> emat({nt_tot,nfreq,nstations}, af_rhost | af_zero);
     emat.at({t,f,sa}) = ea;
     emat.at({t,f,sb}) = eb;
-    emat = emat.to_gpu();
 
+    assert((nt_tot % 32) == 0);
+    Array<uint> rfimask({nfreq,nt_tot/32}, af_rhost | af_zero);
     Array<int> vmat_cpu({nt_outer,nfreq,nvtiles,16,16,2}, af_rhost | af_zero);
-    vmat_cpu.at({touter,f,taa,alo,alo,0}) = (za * conj(za)).real();
-    vmat_cpu.at({touter,f,tbb,blo,blo,0}) = (zb * conj(zb)).real();
-    vmat_cpu.at({touter,f,tab,alo,blo,0}) = (za * conj(zb)).real();
-    vmat_cpu.at({touter,f,tab,alo,blo,1}) = (za * conj(zb)).imag();
-
-    if (ahi == bhi) {
-	vmat_cpu.at({touter,f,tab,blo,alo,0}) = (zb * conj(za)).real();
-	vmat_cpu.at({touter,f,tab,blo,alo,1}) = (zb * conj(za)).imag();
-    }
-    
     Array<int> vmat_gpu({nt_outer,nfreq,nvtiles,16,16,2}, af_random | af_gpu);
-    corr.launch(vmat_gpu, emat, nt_outer, nt_inner, nullptr, true);  // sync=true
+
+    // Compute rfimask and vmat_cpu.
+    if (rfi_bit) {
+	int j = (f*nt_outer*nt_inner + t) / 32;
+	rfimask.data[j] = (1U << (t % 32));
+	
+	vmat_cpu.at({touter,f,taa,alo,alo,0}) = (za * conj(za)).real();
+	vmat_cpu.at({touter,f,tbb,blo,blo,0}) = (zb * conj(zb)).real();
+	vmat_cpu.at({touter,f,tab,alo,blo,0}) = (za * conj(zb)).real();
+	vmat_cpu.at({touter,f,tab,alo,blo,1}) = (za * conj(zb)).imag();
+	
+	if (ahi == bhi) {
+	    vmat_cpu.at({touter,f,tab,blo,alo,0}) = (zb * conj(za)).real();
+	    vmat_cpu.at({touter,f,tab,blo,alo,1}) = (zb * conj(za)).imag();
+	}
+    }
+
+    // Compute vmat_gpu.
+    emat = emat.to_gpu();
+    rfimask = rfimask.to_gpu();
+    corr.launch(vmat_gpu, emat, rfimask, nt_outer, nt_inner, nullptr, true);  // sync=true
     vmat_gpu = vmat_gpu.to_host();
+
+    // Compare results.
     
     int nfail = 0;
 
@@ -332,7 +344,16 @@ void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner, int M
 
     Array<int> vmat_cpu({nt_outer,nfreq,nvtiles,16,16,2}, af_rhost | af_zero);
     Array<int8_t> emat({nt_tot,nfreq,nstations}, af_rhost | af_zero);
+    
+    assert((nt_tot % 32) == 0);
+    Array<uint> rfimask({nfreq,nt_tot/32}, af_rhost | af_zero);
 
+    // Randomize rfimask.
+    // Note: I checked that gputils::default_rng() returns a uint in which all bits are random.
+    
+    for (int i = 0; i < rfimask.size; i++)
+	rfimask.data[i] = gputils::default_rng();
+    
     vector<int> ix(nstations);
     for (int i = 0; i < nstations; i++)
 	ix[i] = i;
@@ -354,6 +375,13 @@ void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner, int M
 		    emat.at({t,f,ix[i]}) = pack_complex44(z[i]);
 		}
 
+		// Skip updating vmat_cpu if RFI mask bit is zero.
+		uint rm = rfimask.data[(f*nt_tot + t) / 32];
+		uint bit = 1U << (t % 32);
+		if ((rm & bit) == 0)
+		    continue;
+
+		// Update vmat_cpu.
 		for (int i = 0; i < M; i++) {
 		    int ahi = ix[i] >> 4;
 		    int alo = ix[i] & 0xf;
@@ -376,10 +404,11 @@ void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner, int M
     }
 
     emat = emat.to_gpu();
+    rfimask = rfimask.to_gpu();
     Array<int> vmat_gpu({nt_outer,nfreq,nvtiles,16,16,2}, af_random | af_gpu);
 
     Correlator corr(nstations, nfreq);
-    corr.launch(vmat_gpu, emat, nt_outer, nt_inner, nullptr, true);  // sync=true
+    corr.launch(vmat_gpu, emat, rfimask, nt_outer, nt_inner, nullptr, true);  // sync=true
     vmat_gpu = vmat_gpu.to_host();
 
     for (int touter = 0; touter < nt_outer; touter++) {
@@ -430,25 +459,23 @@ int main(int argc, char **argv)
     std::mt19937 rng(137);
     const double maxbytes = 2.0e9;  // 2 GB
 
-    // list of pairs (nstations, nfreq_max)
-    vector<pair<int,int>> todo = {{128,1024},{1024,128}};
+    // List of pairs (nstations, nfreq)
+    vector<pair<int,int>> kparams = get_all_kernel_params();
     
-    for (auto p: todo) {
+    for (auto p: kparams) {
 	int nstations = p.first;
-	int nfreq_max = p.second;
-	int nvtiles = ((nstations/16) * (nstations/16+1)) / 2;
+	int nfreq = p.second;
 	
-	for (int nfreq = 1; nfreq <= nfreq_max; nfreq *= 2) {
-	    double nbytes_e = nfreq * nstations;           // multiply by (nt_inner * nt_outer)
-	    double nbytes_v = 2048.0 * nfreq * nvtiles;    // multiply by (nt_outer)
-
-	    int max_multiplier = int((0.9999*maxbytes - nbytes_v) / (256. * nbytes_e));
-	    int nt_inner = 256 * gputils::rand_int(1, min(max_multiplier,10)+1, rng);
-
-	    int max_nt_outer = int(maxbytes / (nt_inner*nbytes_e + nbytes_v));
-	    int nt_outer = gputils::rand_int(1, max_nt_outer+1, rng);
-	    test_correlator(nstations, nfreq, nt_outer, nt_inner);
-	}
+	int nvtiles = ((nstations/16) * (nstations/16+1)) / 2;
+	double nbytes_e = nfreq * nstations;           // multiply by (nt_inner * nt_outer)
+	double nbytes_v = 2048.0 * nfreq * nvtiles;    // multiply by (nt_outer)
+	
+	int max_multiplier = int((0.9999*maxbytes - nbytes_v) / (256. * nbytes_e));
+	int nt_inner = 256 * gputils::rand_int(1, min(max_multiplier,10)+1, rng);
+	
+	int max_nt_outer = int(maxbytes / (nt_inner*nbytes_e + nbytes_v));
+	int nt_outer = gputils::rand_int(1, max_nt_outer+1, rng);
+	test_correlator(nstations, nfreq, nt_outer, nt_inner);
     }
 
     return 0;

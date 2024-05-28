@@ -124,6 +124,16 @@ public:
     //    where fstride = 512 * (nstations/16) * (nstations/16+1) / 2
     //                  = nstations * (nstations+16)
     //
+    //
+    //  - The 'rfimask' array is a boolean array indexed by (freq, time), represented as:
+    //
+    //       int32 rfimask[nfreq][(nt_outer*nt_inner)/32] with axes contiguous.
+    //
+    //    Formally, the RFI mask bit corresponding to indices (f,t) is given by the following code:
+    //
+    //       int i = f*nt_outer*nt_inner + t;
+    //       bool unmasked = rfimask[i/32] & (1 << (i % 32));   // where rfimask is a (uint *)
+    //
     //  - 'nt_inner' must be a multiple of 256.
     //
     //  - We assume that 4-bit electric field samples are in the range [-7,7], i.e. the value (-8)
@@ -144,8 +154,8 @@ public:
     //    If you run the 'time-correlator' program, you can see the first few calls take longer, but
     //    the timing quickly settles down.
 
-    void launch(int *vis_out, const int8_t *e_in, int nt_outer, int nt_inner,
-		cudaStream_t stream=nullptr, bool sync=false) const;
+    void launch(int *vis_out, const int8_t *e_in, const uint *rfimask,
+		int nt_outer, int nt_inner, cudaStream_t stream=nullptr, bool sync=false) const;
 
     // This version of launch() uses gputils::Array objects instead of bare pointers.
     // Both arrays must be allocated on the GPU.
@@ -155,14 +165,18 @@ public:
     // Here, nvtiles = (nstations/16) * (nstations/16+1) / 2.
     //
     // The 'e_in' array must have shape (nt_outer * nt_inner, nfreq, nstations).
+    //
+    // The 'rfimask' array must have shape (nfreq, nt_outer * nt_inner / 32).
+    // (See previous long comment for indexing logic.)
     
-    void launch(gputils::Array<int> &vis_out, const gputils::Array<int8_t> &e_in,
+    void launch(gputils::Array<int> &vis_out, const gputils::Array<int8_t> &e_in, const gputils::Array<uint> &rfimask,
 		int nt_outer, int nt_inner, cudaStream_t stream=nullptr, bool sync=false) const;
     
     // Initialized by constructor.
     const CorrelatorParams params;
-    
-    using kernel_t = void (*)(int *, const int8_t *, const int *, int);
+
+    // Kernel args are (dst, src, rfimask, ptable, nt_inner).
+    using kernel_t = void (*)(int *, const int8_t *, const uint *, const int *, int);
 
 protected:
     // This small (currently 27 KB) array will persist in GPU memory for the lifetime of the Correlator object.
@@ -180,7 +194,10 @@ extern Correlator::kernel_t get_kernel(int nstations, int nfreq);
 // Used internally to "promote" compile-time argument to runtime argument.
 extern void register_kernel(int nstations, int nfreq, Correlator::kernel_t kernel);
 
-    
+// For testing -- returns allowed (nstations, nfreq) pairs
+extern std::vector<std::pair<int,int>> get_all_kernel_params();
+
+
 }  // namespace n2k
 
 

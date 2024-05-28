@@ -39,12 +39,13 @@ Correlator::Correlator(const CorrelatorParams &params_) : params(params_)
 }
 
 
-void Correlator::launch(int *vis_out, const int8_t *e_in, int nt_outer, int nt_inner, cudaStream_t stream, bool sync) const
+void Correlator::launch(int *vis_out, const int8_t *e_in, const uint *rfimask, int nt_outer, int nt_inner, cudaStream_t stream, bool sync) const
 {
     assert(nt_outer > 0);
     assert(nt_inner > 0);
     assert(vis_out != nullptr);
     assert(e_in != nullptr);
+    assert(rfimask != nullptr);
 
     if (nt_inner % CorrelatorParams::nt_divisor)
 	throw runtime_error("n2k::Correlator::launch: expected nt_inner(=" + to_str(nt_inner) + ") to be a multiple of " + to_str(CorrelatorParams::nt_divisor));
@@ -58,7 +59,7 @@ void Correlator::launch(int *vis_out, const int8_t *e_in, int nt_outer, int nt_i
     int shmem_nbytes = CorrelatorParams::shmem_nbytes;
     const int *poffsets = this->precomputed_offsets.get();
     
-    kernel <<<nblocks, nthreads, shmem_nbytes, stream >>> (vis_out, e_in, poffsets, nt_inner);
+    kernel <<<nblocks, nthreads, shmem_nbytes, stream >>> (vis_out, e_in, rfimask, poffsets, nt_inner);
     CUDA_PEEK("Correlator::launch");
 
     if (sync)
@@ -66,9 +67,10 @@ void Correlator::launch(int *vis_out, const int8_t *e_in, int nt_outer, int nt_i
 }
 
 
-void Correlator::launch(Array<int> &vis_out, const Array<int8_t> &e_in, int nt_outer, int nt_inner, cudaStream_t stream, bool sync) const
+void Correlator::launch(Array<int> &vis_out, const Array<int8_t> &e_in, const Array<uint> &rfimask, int nt_outer, int nt_inner, cudaStream_t stream, bool sync) const
 {
     int nt_expected = nt_outer * nt_inner;
+    int nrfi_expected = (nt_expected / 32);
     int vmat_ntiles = params.vmat_ntiles;
     int nstat = params.nstations;
     int nfreq = params.nfreq;
@@ -97,12 +99,22 @@ void Correlator::launch(Array<int> &vis_out, const Array<int8_t> &e_in, int nt_o
 	throw runtime_error(ss.str());
     }
 
+    if (!rfimask.shape_equals({nfreq,nrfi_expected})) {
+	stringstream ss;
+	ss << "Correlator::launch(nfreq=" << nfreq << ", nt_outer=" << nt_outer << ", nt_inner=" << nt_inner << ")"
+	   << ": expected rfimask shape=(" << nfreq << "," << nrfi_expected << ")"
+	   << ", got shape=" << rfimask.shape_str();
+	throw runtime_error(ss.str());
+    }
+
     assert(vis_out.is_fully_contiguous());
     assert(vis_out.on_gpu());
     assert(e_in.is_fully_contiguous());
     assert(e_in.on_gpu());
+    assert(rfimask.is_fully_contiguous());
+    assert(rfimask.on_gpu());
     
-    this->launch(vis_out.data, e_in.data, nt_outer, nt_inner, stream, sync);
+    this->launch(vis_out.data, e_in.data, rfimask.data, nt_outer, nt_inner, stream, sync);
 }
 
 
