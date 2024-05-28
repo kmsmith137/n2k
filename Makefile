@@ -35,16 +35,20 @@ OFILES = \
   template_instantiations/kernel_128_64.o \
   template_instantiations/kernel_128_128.o \
   template_instantiations/kernel_128_256.o \
+  template_instantiations/kernel_128_384.o \
   template_instantiations/kernel_128_512.o \
   template_instantiations/kernel_128_1024.o \
+  template_instantiations/kernel_128_2048.o \
   template_instantiations/kernel_1024_1.o \
   template_instantiations/kernel_1024_2.o \
   template_instantiations/kernel_1024_4.o \
   template_instantiations/kernel_1024_8.o \
   template_instantiations/kernel_1024_16.o \
   template_instantiations/kernel_1024_32.o \
+  template_instantiations/kernel_1024_48.o \
   template_instantiations/kernel_1024_64.o \
-  template_instantiations/kernel_1024_128.o
+  template_instantiations/kernel_1024_128.o \
+  template_instantiations/kernel_2048_16.o
 
 # "Special" kernel, used in special targets 'make one' and 'make asm'.
 SPKERN = 1024_16
