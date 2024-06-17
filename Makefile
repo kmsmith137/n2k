@@ -25,6 +25,7 @@ HFILES = \
 OFILES = \
   src/Correlator.o \
   src/kernel_table.o \
+  src/make_rfimask.o \
   src/precompute_offsets.o \
   template_instantiations/kernel_128_1.o \
   template_instantiations/kernel_128_2.o \
@@ -59,6 +60,7 @@ LIBFILES = \
 XFILES = \
   test-correlator \
   time-correlator \
+  test-make-rfimask \
   scratch
 
 # Used in 'make clean', 'make source_files.txt'
@@ -108,6 +110,9 @@ test-correlator: src/test-correlator.o lib/libn2k.so $(GPUTILS_LIBDIR)/libgputil
 	$(NVCC) -o $@ $^
 
 time-correlator: src/time-correlator.o lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
+	$(NVCC) -o $@ $^
+
+test-make-rfimask: src/test-make-rfimask.o lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
 	$(NVCC) -o $@ $^
 
 scratch: src/scratch.o $(OFILES) lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
