@@ -188,7 +188,7 @@ shared_ptr<int> precompute_offsets(const CorrelatorParams &params)
     }
 
     ptable_arr = ptable_arr.to_gpu();
-    return ptable_arr.base;
+    return reinterpret_pointer_cast<int> (ptable_arr.base);
 }
 
 
