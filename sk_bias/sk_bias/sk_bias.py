@@ -191,7 +191,8 @@ class Pdf:
 
         i, j = min_s1, (max_s1+1)
         t = np.sum(p1[i:j])
-        
+
+        print(f'XXX {n=} {min_s1=} {max_s1=}')
         assert t >= 1.0e-12
         mean_s2_s1 = np.sum(p2[i:j] / np.arange(i,j)**2) / t
         mean_sk = (n+1) / (n-1) * (n*mean_s2_s1 - 1)
@@ -203,7 +204,6 @@ class Pdf:
         return mean_sk - 1
 
     
-
     def get_bias(self, n, min_s1=None, max_s1=None, bvec=None):
         if n is None:
             # Ignore (min_s1, max_s1, bvec)
@@ -213,12 +213,11 @@ class Pdf:
             return self._bias_from_p1_p2(p1, p2, min_s1, max_s1, bvec)
 
 
-    def simulate_sk(self, *, n, nmc, bvec=None):
-        """Returns length-nmc array containing SK statistics."""
-            
-        if bvec is not None:
-            assert bvec.shape == (98*n+1,)
-            
+    def simulate_sk(self, n, nmc, min_s1=None, max_s1=None, bvec=None):
+        """Returns 1-d array of length <= nmc, containing SK-statistics.
+        The length of the array can be < nmc, if "clipped" by [min_s1,max_s1].
+        """
+        
         if self.rms is not None:
             e = np.random.normal(scale=self.rms, size=(nmc,n,2))
             e = np.round(e)
@@ -230,38 +229,50 @@ class Pdf:
         e2 = np.sum(e**2, axis=2)
         s1 = np.sum(e2, axis=1)
         s2 = np.sum(e2**2, axis=1)
+
+        s1 = np.array(s1 + 0.5, dtype=int)   # convert float->int
+        min_s1 = min_s1 if (min_s1 is not None) else 1
+        valid = (s1 >= min_s1)
+
+        if max_s1 is not None:
+            valid = np.logical_and(valid, s1 <= max_s1)
+
+        s1 = s1[valid]
+        s2 = s2[valid]
         
-        sk = (n+1)/(n-1) * (n*s2/np.maximum(s1,1)**2 - 1)
-        sk = np.where(s1 > 0, sk, 1.0)   # Define SK=1 if S1=0
+        assert np.all(s1 > 0)
+        sk = (n+1)/(n-1) * (n*s2/s1**2 - 1)
 
         if bvec is not None:
-            s1 = np.array(s1 + 0.5, dtype=int)
-            assert np.all(s1 >= 0)
-            assert np.all(s1 <= 98*n)
+            assert bvec.shape == (98*n+1,)
             sk -= bvec[s1]
         
         return sk
         
 
-    def run_mcs(self, n, nbatch=None, bvec=None):
+    def run_mcs(self, n, nbatch=None, min_s1=None, max_s1=None, bvec=None):
+        """Called by BiasInterpolator.run_mcs()"""
+        
         if nbatch is None:
             nbatch = 2**21 // n
-        
-        # Currently runs forever!
-        mean_sk, p1, p2 = self.analyze_bias(n, bvec=bvec)
+
+        predicted_bias = self.get_bias(n, min_s1, max_s1, bvec)
         tracker = MCTracker()
+        
         print(self)
         print(f'Running Monte Carlos with {n=}')
 
         for iouter in itertools.count(1):
-            sk = self.simulate_sk(n=n, nmc=nbatch, bvec=bvec)
-            tracker.update(sk)
+            sk = self.simulate_sk(n, nbatch, min_s1, max_s1, bvec)
+            tracker.update(sk - 1.0)
 
             if is_perfect_square(iouter):
                 nmc = tracker.n
-                delta = tracker.mean - mean_sk
-                sigmas = delta / (tracker.var/nmc)**0.5
-                print(f'    nmc={nmc}  mc_sk={tracker.mean}  predicted_mean={mean_sk}  delta={delta}  sigmas={sigmas}')
+                pvalid = nmc / (iouter * nbatch)
+                delta = tracker.mean - predicted_bias
+                ivar = (1.0 / tracker.var) if (tracker.var > 0) else 0.0
+                sigmas = delta * (ivar * nmc)**0.5
+                print(f'    nmc={nmc}  {pvalid=}  mean_bias={tracker.mean}  predicted_mean={predicted_bias}  delta={delta}  sigmas={sigmas}')
 
 
 ####################################################################################################
@@ -276,7 +287,9 @@ class MCTracker:
     
     def update(self, s):
         assert s.ndim == 1
-        assert len(s) > 0
+        
+        if len(s) == 0:
+            return
         
         ns = len(s)
         smean = np.mean(s)
@@ -343,6 +356,55 @@ def neville(datax, datay, x):
                         (datax[i]-x)*p[i+1])/ \
                         (datax[i]-datax[i+k])
     return p[0]
+
+
+def fit_polynomial(xvec, yvec):
+    """Super-stable and gratuitously slow!"""
+    
+    d = len(xvec)-1
+    assert d >= 0
+    assert xvec.shape == yvec.shape == (d+1,)
+    assert np.all(xvec[:-1] < xvec[1:])
+
+    mat = np.zeros((d+1,d+1))
+    mult = np.zeros(d+1)
+    coeffs = np.zeros(d+1)
+    residual = np.copy(yvec)
+    
+    for i in range(d+1):
+        row = xvec**i if (i > 0) else np.ones(d+1)
+        mult[i] = np.dot(row,row)**(-0.5)
+        mat[i,:] = row * mult[i]
+
+        coeffs[i] = np.dot(mat[i,:], residual)
+        residual -= coeffs[i] * mat[i,:]
+        
+    coeffs += np.linalg.solve(mat.T, residual)
+    coeffs *= mult
+    return coeffs
+
+
+def test_fit_polynomial():
+    for iouter in range(5):
+        for d in range(1, 7):
+            maxsep = np.exp(np.random.uniform(-5,5))
+            dx = np.random.uniform(0.1*maxsep, maxsep, size=d+1)
+            xvec = np.cumsum(dx)
+            xvec -= np.mean(xvec)
+            xvec += np.random.uniform(-10*maxsep, 10*maxsep)
+            yvec = np.random.normal(size=d+1)
+            
+            coeffs = fit_polynomial(xvec, yvec)
+            
+            zvec = np.zeros(d+1)
+            for i in range(d+1):
+                zvec += coeffs[i] * xvec**i
+
+            eps = np.max(np.abs(yvec-zvec))
+            print(f'test_fit_polynomial({d=}): {eps=}')
+
+
+####################################################################################################
 
 
 class BiasInterpolator:
@@ -463,7 +525,6 @@ class BiasInterpolator:
         ]
         
         pdf_list = [ Pdf(rms) for rms in rms_vec ]
-        # n_list = [ (64+8*i) for i in range(9) ]
         n_list = [ 48*(64+8*i) for i in range(9) ]
         color_list = [ (i/8,0,1-i/8) for i in range(9) ]
 
@@ -479,4 +540,40 @@ class BiasInterpolator:
         plt.legend(loc='upper right')
         plt.ylim(1.0e-4, 1.0)
         savefig(pdf_outfile)
+
+
+    def run_mcs(self, rms, n, nbatch=None):
+        pdf = Pdf(rms)
+        min_s1, max_s1, bvec = self.get_interpolated_bvec(n)
+        pdf.run_mcs(n, nbatch, min_s1, max_s1, bvec)
+
+
+    def emit_code(self):
+        nx, ny = self.nx, self.ny
         
+        print('namespace n2k {')
+        print('namespace sk_globals {')
+        print()
+        print(f'// mu_min = {self.mu_min};')
+        print(f'// mu_max = {self.mu_max};')
+        print()
+        print(f'const double xmin = {self.xmin};')
+        print(f'const double xmax = {self.xmax};')
+        print(f'const double nx = {nx};')
+        print()
+        print(f'const int n_min = {self.n_min};')
+        print(f'const double ny = {ny};')
+        print()
+        print(f'const float btab[{nx*ny}] = {{')
+
+        for i in range(nx):
+            for j in range(ny):
+                print(f'  {self.bmat[i,j]}f', end='')
+                if (i < (nx-1)) or (j < (ny-1)):
+                    print(',', end='')
+                if (j == (ny-1)):
+                    print()
+
+        print('};')
+        print()
+        print('}}  // namespace n2k::global_sk')
