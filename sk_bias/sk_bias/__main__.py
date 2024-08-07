@@ -39,7 +39,7 @@ elif args.command == 'make_plot':
     interp.make_plot(args.pdf_outfile)
 elif args.command == 'run_mcs':
     interp = sk_bias.read_pickle(args.pkl_infile)
-    interp.run_mcs(self.rms, self.n)
+    interp.run_mcs(args.rms, args.n)
 elif args.command == 'emit_code':
     interp = sk_bias.read_pickle(args.pkl_infile)
     interp.emit_code()
