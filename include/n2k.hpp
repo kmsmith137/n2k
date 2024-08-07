@@ -265,6 +265,17 @@ extern void launch_s0_kernel(uint *s0, const ulong *pl_mask, long T, long F, lon
 extern void launch_s0_kernel(gputils::Array<uint> &s0, const gputils::Array<ulong> &pl_mask, long ds, cudaStream_t stream=0);
 
 
+// Precomputed constants for dealing with SK quantization bias.
+namespace sk_globals
+{
+    extern double xmin;
+    extern double xmax;
+    extern int nx;
+    extern int ny;
+    extern int n_min;
+    extern float *bias_coeffs;
+}  // namespace n2k::global_sk
+
 }  // namespace n2k
 
 #endif // _N2K_HPP

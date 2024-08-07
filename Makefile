@@ -28,6 +28,7 @@ OFILES = \
   src/make_rfimask.o \
   src/precompute_offsets.o \
   src/s0_kernel.o \
+  src/sk_globals.o \
   template_instantiations/kernel_128_1.o \
   template_instantiations/kernel_128_2.o \
   template_instantiations/kernel_128_4.o \

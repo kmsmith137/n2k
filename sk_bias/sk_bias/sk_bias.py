@@ -1,3 +1,4 @@
+import sys
 import pickle
 import itertools
 
@@ -37,13 +38,13 @@ def savefig(filename):
 
     
 def write_pickle(filename, x):
-    print(f'Writing {filename}')
+    print(f'Writing {filename}', file=sys.stderr)
     with open(filename, 'wb') as f:
         pickle.dump(x, f)
 
 
 def read_pickle(filename, verbose=True):
-    print(f'Reading {filename}')
+    print(f'Reading {filename}', file=sys.stderr)
     with open(filename, 'rb') as f:
         return pickle.load(f)
 
@@ -566,18 +567,17 @@ class BiasInterpolator:
         print(f'// mu_min = {self.mu_min};')
         print(f'// mu_max = {self.mu_max};')
         print()
-        print(f'const double xmin = {self.xmin};')
-        print(f'const double xmax = {self.xmax};')
-        print(f'const double nx = {nx};')
+        print(f'double xmin = {self.xmin};')
+        print(f'double xmax = {self.xmax};')
+        print(f'int nx = {nx};')
+        print(f'int ny = {ny};')
+        print(f'int n_min = {self.n_min};')
         print()
-        print(f'const int n_min = {self.n_min};')
-        print(f'const double ny = {ny};')
-        print()
-        print(f'const float bias_coeffs[{nx*ny}] = {{')
+        print(f'float bias_coeffs[{nx*ny}] = {{')
 
         for i in range(nx):
             for j in range(ny):
-                print(f'  {self.bmat[i,j]}f', end='')
+                print(f'  {self.bcoeffs[i,j]}', end='')
                 if (i < (nx-1)) or (j < (ny-1)):
                     print(',', end='')
                 if (j == (ny-1)):
