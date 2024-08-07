@@ -1,4 +1,6 @@
+import pickle
 import itertools
+
 import numpy as np
 import scipy.signal
 import scipy.special
@@ -32,6 +34,18 @@ def savefig(filename):
     plt.tight_layout()
     plt.savefig(filename)
     plt.clf()
+
+    
+def write_pickle(filename, x):
+    print(f'Writing {filename}')
+    with open(filename, 'wb') as f:
+        pickle.dump(x, f)
+
+
+def read_pickle(filename, verbose=True):
+    print(f'Reading {filename}')
+    with open(filename, 'rb') as f:
+        return pickle.load(f)
 
 
 ####################################################################################################
@@ -137,11 +151,8 @@ class Pdf:
         return f'Px(rms={self.rms}, mu={self.mu}, b_large_n={self.b_large_n})'
 
 
-    def analyze_bias(self, n, bvec=None, remove_zero=False):
+    def get_p1_p2(self, n):
         assert n > 1
-
-        if bvec is not None:
-            assert bvec.shape == (98*n+1,)
         
         p0 = np.zeros(50)
         for i in range(8):
@@ -162,31 +173,44 @@ class Pdf:
         
         p1 = np.fft.irfft(qn1)[:nout]
         p2 = np.fft.irfft(qn2)[:nout]
-                
-        if remove_zero:
-            t = np.sum(p1[1:])
-            assert t > 0.0
-            
-            p1[0] = p2[0] = 0.
-            p1 /= t
-            p2 /= t
-            
-        mean_s2_s1 = np.sum(p2[1:] / np.arange(1,98*n+1)**2)
+
+        return p1, p2
+
+
+    @staticmethod
+    def _bias_from_p1_p2(p1, p2, min_s1=None, max_s1=None, bvec=None):
+        n = p1.size // 98
+        assert p1.shape == p2.shape == (98*n+1,)
+
+        if min_s1 is None:
+            min_s1 = 1
+        if max_s1 is None:
+            max_s1 = 98*n
+        
+        assert 1 <= min_s1 <= max_s1 <= 98*n
+
+        i, j = min_s1, (max_s1+1)
+        t = np.sum(p1[i:j])
+        
+        assert t >= 1.0e-12
+        mean_s2_s1 = np.sum(p2[i:j] / np.arange(i,j)**2) / t
         mean_sk = (n+1) / (n-1) * (n*mean_s2_s1 - 1)
-        mean_sk += p1[0]   # Define SK=1 if S1=0
 
         if bvec is not None:
-            mean_sk -= np.dot(p1, bvec)
-            
-        return mean_sk, p1, p2
+            assert bvec.shape == (98*n+1,)
+            mean_sk -= np.dot(p1[i:j], bvec[i:j]) / t
 
+        return mean_sk - 1
 
-    def get_bias(self, n, remove_zero=False):
+    
+
+    def get_bias(self, n, min_s1=None, max_s1=None, bvec=None):
         if n is None:
+            # Ignore (min_s1, max_s1, bvec)
             return self.b_large_n
         else:
-            mean_sk, p1, p2 = self.analyze_bias(n,remove_zero=True)
-            return mean_sk - 1.0
+            p1, p2 = self.get_p1_p2(n)
+            return self._bias_from_p1_p2(p1, p2, min_s1, max_s1, bvec)
 
 
     def simulate_sk(self, *, n, nmc, bvec=None):
@@ -322,7 +346,7 @@ def neville(datax, datay, x):
 
 
 class BiasInterpolator:
-    def __init__(self, *, mu_min=1.0, mu_max=90.0, num_mu=100, n_min=64, remove_zero=False):
+    def __init__(self, *, mu_min=1.0, mu_max=90.0, num_mu=128, n_min=64, remove_zero=False):
         self.mu_min = mu_min
         self.mu_max = mu_max
         self.n_min = n_min
@@ -350,8 +374,10 @@ class BiasInterpolator:
         for i,x in enumerate(self.xvec):
             mu = np.exp(x)
             pdf = Pdf.from_mu(mu)
-            for j,n in enumerate(self.nlist):
-                self.bmat[i,j] = pdf.get_bias(n, remove_zero=remove_zero)
+            for j in range(self.ny):
+                n = self.nlist[j]
+                # min_s1, max_s1 = self.minmax_list[j]
+                self.bmat[i,j] = pdf.get_bias(n)
 
             
     def interpolate(self, *, mu, n):
@@ -376,14 +402,12 @@ class BiasInterpolator:
 
 
     def eval_exact(self, *, mu, n):
+        """Only called in check_interpolation()."""
         pdf = Pdf.from_mu(mu)
-        return pdf.get_bias(n, remove_zero=self.remove_zero)
+        return pdf.get_bias(n)
 
-
-    def check(self):
-        print(f'{np.exp(self.xvec[-2])=}')
-        print(f'{self.bmat[-2,:]=}')
-        
+    
+    def check_interpolation(self):
         mu_vec = logspace(self.mu_min, self.mu_max, 5 * self.nx)
         
         nvec = logspace(self.n_min, 10 * self.n_min, 10*self.ny)[1:-1:2]
@@ -394,7 +418,6 @@ class BiasInterpolator:
         argmax = 0.0
 
         for mu in mu_vec:
-        # for mu in logspace(self.mu_min, self.mu_max, (self.nx-2)):
             for n in nvec:
                 b_exact = self.eval_exact(mu=mu, n=n)
                 b_interp = self.interpolate(mu=mu, n=n)
@@ -404,4 +427,56 @@ class BiasInterpolator:
                     argmax = (mu,n)
 
         print(f'maxdiff={maxdiff} at (mu,n)={argmax}')
+    
+
+    def get_interpolated_bvec(self, n):
+        assert n is not None
+        
+        eps = 5.0e-11
+        min_s1 = n * self.mu_min
+        min_s1 = int((1-eps)*min_s1 + 1)  # round up        
+        max_s1 = n * self.mu_max
+        max_s1 = int((1+eps)*max_s1)      # round down
+        assert 0 < min_s1 <= max_s1 <= 98*n
+        
+        bvec = np.zeros(98*n+1)
+        for s1 in range(min_s1, max_s1+1):
+            bvec[s1] = self.interpolate(mu=s1/n, n=n)
+
+        return min_s1, max_s1, bvec
+    
+        
+    def make_plot(self, pdf_outfile):
+        rms_min = Pdf.from_mu(self.mu_min).rms
+        rms_max = Pdf.from_mu(self.mu_max).rms
+        rms_vec = logspace(rms_min, rms_max, 200)
+
+        # Pairs (n, color)
+        todo = [
+            (64, (1, 0, 0)),
+            (85, (0.66, 0, 0.33)),
+            (107, (0.33, 0, 0.66)),
+            (128, (0, 0, 1)),
+            (256, (0, 0.33, 0.66)),
+            (512, (0, 0.66, 0.33)),
+            (1024, (0, 1, 0))
+        ]
+        
+        pdf_list = [ Pdf(rms) for rms in rms_vec ]
+        # n_list = [ (64+8*i) for i in range(9) ]
+        n_list = [ 48*(64+8*i) for i in range(9) ]
+        color_list = [ (i/8,0,1-i/8) for i in range(9) ]
+
+        for (n,color) in todo:
+            min_s1, max_s1, bvec = self.get_interpolated_bvec(n)
+            bias_list = [ pdf.get_bias(n, min_s1, max_s1, bvec) for pdf in pdf_list ]
+            sigma_vec = np.array(bias_list) / (2/n**0.5)
+
+            # Plot positive and negative parts
+            plt.loglog(rms_vec, np.maximum(sigma_vec, 1.0e-6), color=color, ls='-', label=f'n={n}')
+            plt.loglog(rms_vec, np.maximum(-sigma_vec, 1.0e-6), color=color, ls=':')
+
+        plt.legend(loc='upper right')
+        plt.ylim(1.0e-4, 1.0)
+        savefig(pdf_outfile)
         
