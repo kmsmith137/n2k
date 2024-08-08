@@ -107,7 +107,7 @@ class Pdf:
     _rms_max = 1.0e6
     
     def __init__(self, rms):
-        """Take rms=None to get a 'saturating' PDF, which always takes values \pm 7."""
+        """Take rms=None to get a 'saturating' PDF, which always takes values +/- 7."""
 
         if rms is not None:
             assert self._rms_min <= rms <= self._rms_max
@@ -550,9 +550,16 @@ class BiasInterpolator:
         savefig(pdf_outfile)
 
 
-    def run_mcs(self, rms, n, nbatch=None):
-        pdf = Pdf(rms)
+    def run_mcs(self, rms, n, nbatch=None, verbose=False):
         min_s1, max_s1, bvec = self.get_interpolated_bvec(n)
+
+        if verbose:
+            print(f'{min_s1=}')
+            print(f'{max_s1=}')
+            for s1 in range(min_s1, max_s1+1):
+                print(f'   bvec[{s1}] = {bvec[s1]}')
+        
+        pdf = Pdf(rms)
         pdf.run_mcs(n, nbatch, min_s1, max_s1, bvec)
 
 
@@ -564,16 +571,16 @@ class BiasInterpolator:
         print('namespace n2k {')
         print('namespace sk_globals {')
         print()
-        print(f'// mu_min = {self.mu_min};')
-        print(f'// mu_max = {self.mu_max};')
-        print()
+        print(f'double mu_min = {self.mu_min};')
+        print(f'double mu_max = {self.mu_max};')
         print(f'double xmin = {self.xmin};')
         print(f'double xmax = {self.xmax};')
+        print()
         print(f'int nx = {nx};')
         print(f'int ny = {ny};')
         print(f'int n_min = {self.n_min};')
         print()
-        print(f'float bias_coeffs[{nx*ny}] = {{')
+        print(f'static double bias_coeffs[{nx*ny}] = {{')
 
         for i in range(nx):
             for j in range(ny):
@@ -584,5 +591,7 @@ class BiasInterpolator:
                     print()
 
         print('};')
+        print()
+        print('double *get_bias_coeffs() { return bias_coeffs; }')
         print()
         print('}}  // namespace n2k::global_sk')

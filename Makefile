@@ -64,6 +64,7 @@ XFILES = \
   time-correlator \
   test-make-rfimask \
   test-s0-kernel \
+  test-sk-bias \
   scratch
 
 # Used in 'make clean', 'make source_files.txt'
@@ -119,6 +120,9 @@ test-make-rfimask: src/test-make-rfimask.o lib/libn2k.so $(GPUTILS_LIBDIR)/libgp
 	$(NVCC) -o $@ $^
 
 test-s0-kernel: src/test-s0-kernel.o lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
+	$(NVCC) -o $@ $^
+
+test-sk-bias: src/test-sk-bias.o lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
 	$(NVCC) -o $@ $^
 
 scratch: src/scratch.o $(OFILES) lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so

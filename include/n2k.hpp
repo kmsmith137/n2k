@@ -268,12 +268,14 @@ extern void launch_s0_kernel(gputils::Array<uint> &s0, const gputils::Array<ulon
 // Precomputed constants for dealing with SK quantization bias.
 namespace sk_globals
 {
+    extern double mu_min;
+    extern double mu_max;
     extern double xmin;
     extern double xmax;
     extern int nx;
     extern int ny;
     extern int n_min;
-    extern float *bias_coeffs;
+    extern double *get_bias_coeffs();
 }  // namespace n2k::global_sk
 
 }  // namespace n2k
