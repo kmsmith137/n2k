@@ -333,31 +333,6 @@ class MCTracker:
 ####################################################################################################
 
 
-def neville(datax, datay, x):
-    """
-    Finds an interpolated value using Neville's algorithm.
-
-    Input
-      datax: input x's in a list of size n
-      datay: input y's in a list of size n
-      x: the x value used for interpolation
-
-    Output
-      p[0]: the polynomial of degree n
-    """
-    n = len(datax)
-    p = n*[0]
-    for k in range(n):
-        for i in range(n-k):
-            if k == 0:
-                p[i] = datay[i]
-            else:
-                p[i] = ((x-datax[i+k])*p[i]+ \
-                        (datax[i]-x)*p[i+1])/ \
-                        (datax[i]-datax[i+k])
-    return p[0]
-
-
 def fit_polynomial(xvec, yvec):
     """Super-stable and gratuitously slow!"""
     
@@ -443,7 +418,10 @@ class BiasInterpolator:
                 self.bmat[i,j] = pdf.get_bias(n)
 
             self.bcoeffs[i,:] = fit_polynomial(self.yvec, self.bmat[i,:])
-            
+
+        self.binterp = [ scipy.interpolate.KroghInterpolator(self.xvec[i:(i+4)], self.bcoeffs[i:(i+4),:])
+                         for i in range(self.nx-3) ]
+
             
     def interpolate(self, *, mu, n):
         x = np.log(mu)
@@ -458,8 +436,19 @@ class BiasInterpolator:
 
         i = int(t + 0.5)
         i = max(i, 1)
-        i = min(i, nx-2)
+        i = min(i, nx-3)
 
+        c = self.binterp[i-1](x)
+        assert len(c) == self.ny
+
+        ret = 0
+        ypow = 1
+        for j in range(self.ny):
+            ret += c[j] * ypow
+            ypow *= y
+
+        return ret
+        
         ypow = np.ones(self.ny)
         for j in range(1, self.ny):
             ypow[j] = ypow[j-1] * y
@@ -545,6 +534,8 @@ class BiasInterpolator:
             plt.loglog(rms_vec, np.maximum(sigma_vec, 1.0e-6), color=color, ls='-', label=f'n={n}')
             plt.loglog(rms_vec, np.maximum(-sigma_vec, 1.0e-6), color=color, ls=':')
 
+        plt.xlabel('RMS (bits)')
+        plt.ylabel('SK bias after correction (sigmas)')
         plt.legend(loc='upper right')
         plt.ylim(1.0e-4, 1.0)
         savefig(pdf_outfile)

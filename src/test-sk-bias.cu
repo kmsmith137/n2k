@@ -133,6 +133,11 @@ struct Bvec
 	
 	this->bvec = vector<T> (98*n+1, 0);
 
+	// FIXME in hindsight, interpolation could be done more efficiently in two
+	// steps. First, take the 2-d shape-(128,4) coefficient array, and "evaluate y"
+	// to get a 1-d length-128 array. Then, "resample x" by interpolation, to get
+	// a 1-d length-(98*n+1) array.
+
 	for (int s1 = min_s1; s1 <= max_s1; s1++) {
 	    double mu = s1/double(n);
 	    double x = log(mu);
