@@ -4,7 +4,7 @@
 ARCH =
 ARCH += -gencode arch=compute_80,code=sm_80
 ARCH += -gencode arch=compute_86,code=sm_86
-# ARCH += -gencode arch=compute_89,code=sm_89
+ARCH += -gencode arch=compute_89,code=sm_89
 # ARCH += -gencode arch=compute_90,code=sm_90
 
 GPUTILS_INCDIR=../gputils/include
