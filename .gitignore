@@ -3,6 +3,7 @@
 test-correlator
 test-make-rfimask
 test-s0-kernel
+test-sk-bias
 time-correlator
 template_instantiations/kernel_*.cu
 scratch
