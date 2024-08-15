@@ -101,6 +101,115 @@ def test_ipow():
 ####################################################################################################
 
 
+class MCTracker:
+    def __init__(self):
+        self.n = 0
+        self.mean = 0
+        self.var = 0
+
+    
+    def update(self, s):
+        assert s.ndim == 1
+        
+        if len(s) == 0:
+            return
+        
+        ns = len(s)
+        smean = np.mean(s)
+        
+        ds = s - smean
+        ssum2 = np.dot(ds,ds)
+
+        no = self.n
+        omean = self.mean
+        osum2 = (no-1) * self.var
+
+        n = no + ns
+        mean = (no*omean + ns*smean) / n
+        sum2 = ssum2 + osum2 + no*(omean-mean)**2 + ns*(smean-mean)**2
+
+        self.n = n
+        self.mean = mean
+        self.var = (sum2/(n-1)) if (n > 1) else 0
+
+        
+    @classmethod
+    def test(cls):
+        for iouter in range(10):
+            ntot = np.random.randint(5, 11)
+            x = np.random.normal(size=ntot)
+        
+            tracker = MCTracker()
+            pos = 0
+        
+            while pos < ntot:
+                end = min(pos + np.random.randint(1,4), ntot)
+                tracker.update(x[pos:end])
+                pos = end
+
+            print(f'MCTracker.test() iteration {iouter}')
+            print(f'    {tracker.n=} {len(x)=}')
+            print(f'    {tracker.mean=} {np.mean(x)=}')
+            print(f'    {tracker.var=} {np.var(x,ddof=1)=}')
+
+
+
+####################################################################################################
+
+
+def run_unquantized_mcs(n):
+    """Checks some expressions in the notes for <SK> and Var(SK) to all orders in n.
+    This function doesn't really belong in n2k, but it's convenient to sneak it in."""
+
+    nbatch = (2**21 // n) + 1
+    tracker = MCTracker()
+    print(f'run_unquantized_mcs({n=})')
+
+    for iouter in itertools.count(1):
+        e = np.random.normal(size=(nbatch,n,2))
+        e2 = np.sum(e**2, axis=2)
+        s1 = np.sum(e2, axis=1)
+        s2 = np.sum(e2**2, axis=1)
+        sk = (n+1)/(n-1) * (n*s2/s1**2 - 1)
+
+        tracker.update(sk)
+
+        if is_perfect_square(iouter):
+            print(f'   nmc={tracker.n}  mean_sk={tracker.mean}  var_sk={tracker.var}')
+
+
+def run_transit_mcs(nt, ndish, brightness):
+    """Checks some expressions in the notes for Var(SK) during a bright source transit.
+    This function doesn't really belong in n2k, but it's convenient to sneak it in."""
+
+    nbatch = (2**21 // (nt*ndish)) + 1
+    tracker = MCTracker()
+    print(f'run_transit_mcs({nt=}, {ndish=}, {brightness=})')
+
+    var0 = 4./nt/(2*ndish)
+    var1 = var0 * (1 + (ndish-1) * brightness**4 / (1+brightness)**4)
+    
+    for iouter in itertools.count(1):
+        e = np.random.normal(size=(nbatch,2,ndish,nt,2))                       # noise
+        e += np.random.normal(size=(nbatch,2,1,nt,2), scale=brightness**0.5)   # source
+        e2 = np.sum(e**2, axis=4)     # (mc,pol,dish,t)
+        s1 = np.sum(e2, axis=3)       # (mc,pol,dish)
+        s2 = np.sum(e2**2, axis=3)    # (mc,pol,dish)
+        
+        sk = (nt+1)/(nt-1) * (nt*s2/s1**2 - 1)   # (mc,pol,dish)
+        sk = np.mean(sk, axis=2)                 # (mc,pol)
+        sk = np.mean(sk, axis=1)                 # (mc,)
+        assert sk.shape == (nbatch,)
+        
+        tracker.update(sk)
+
+        if is_perfect_square(iouter):
+            print(f'   nmc={tracker.n}  mean_sk={tracker.mean}  var_sk={tracker.var}   {var0=}  {var1=}')
+
+
+####################################################################################################
+
+
 class Pdf:
     _edges = np.array([ 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5 ])
     _rms_min = 0.07
@@ -257,6 +366,7 @@ class Pdf:
             nbatch = 2**21 // n
 
         predicted_bias = self.get_bias(n, min_s1, max_s1, bvec)
+        predicted_variance = 4./n
         tracker = MCTracker()
         
         print(self)
@@ -270,64 +380,10 @@ class Pdf:
                 nmc = tracker.n
                 pvalid = nmc / (iouter * nbatch)
                 delta = tracker.mean - predicted_bias
+                var_ratio = tracker.var / predicted_variance
                 ivar = (1.0 / tracker.var) if (tracker.var > 0) else 0.0
                 sigmas = delta * (ivar * nmc)**0.5
-                print(f'    nmc={nmc}  {pvalid=}  mean_bias={tracker.mean}  predicted_mean={predicted_bias}  delta={delta}  sigmas={sigmas}')
-
-
-####################################################################################################
-
-
-class MCTracker:
-    def __init__(self):
-        self.n = 0
-        self.mean = 0
-        self.var = 0
-
-    
-    def update(self, s):
-        assert s.ndim == 1
-        
-        if len(s) == 0:
-            return
-        
-        ns = len(s)
-        smean = np.mean(s)
-        
-        ds = s - smean
-        ssum2 = np.dot(ds,ds)
-
-        no = self.n
-        omean = self.mean
-        osum2 = (no-1) * self.var
-
-        n = no + ns
-        mean = (no*omean + ns*smean) / n
-        sum2 = ssum2 + osum2 + no*(omean-mean)**2 + ns*(smean-mean)**2
-
-        self.n = n
-        self.mean = mean
-        self.var = (sum2/(n-1)) if (n > 1) else 0
-
-        
-    @classmethod
-    def test(cls):
-        for iouter in range(10):
-            ntot = np.random.randint(5, 11)
-            x = np.random.normal(size=ntot)
-        
-            tracker = MCTracker()
-            pos = 0
-        
-            while pos < ntot:
-                end = min(pos + np.random.randint(1,4), ntot)
-                tracker.update(x[pos:end])
-                pos = end
-
-            print(f'MCTracker.test() iteration {iouter}')
-            print(f'    {tracker.n=} {len(x)=}')
-            print(f'    {tracker.mean=} {np.mean(x)=}')
-            print(f'    {tracker.var=} {np.var(x,ddof=1)=}')
+                print(f'    nmc={nmc}  {pvalid=}  mean_bias={tracker.mean}  predicted_mean={predicted_bias}  delta={delta}  sigmas={sigmas}  (var/var_predicted)={var_ratio}')
 
 
 ####################################################################################################
