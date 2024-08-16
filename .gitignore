@@ -1,9 +1,6 @@
 *~
 *.o
-test-correlator
-test-make-rfimask
-test-s0-kernel
-test-sk-bias
-time-correlator
+bin
+lib
 template_instantiations/kernel_*.cu
 scratch

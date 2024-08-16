@@ -1,4 +1,5 @@
-#include "../include/n2k.hpp"
+#include <gputils/cuda_utils.hpp>
+#include "../include/n2k/launch_s0_kernel.hpp"
 
 using namespace std;
 using namespace gputils;

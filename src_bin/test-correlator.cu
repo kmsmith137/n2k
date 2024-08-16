@@ -2,8 +2,8 @@
 #include <iostream>
 #include <gputils.hpp>
 
-#include "../include/n2k.hpp"
-#include "../include/n2k_kernel.hpp"
+#include "../include/n2k/Correlator.hpp"
+#include "../include/n2k/CorrelatorKernel.hpp"
 
 using namespace std;
 using namespace gputils;

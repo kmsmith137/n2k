@@ -1,4 +1,5 @@
 #include "../include/n2k.hpp"
+#include <gputils/string_utils.hpp>
 #include <iostream>
 
 using namespace std;

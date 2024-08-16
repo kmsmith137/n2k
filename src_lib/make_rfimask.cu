@@ -1,4 +1,5 @@
-#include "../include/n2k.hpp"
+#include <gputils/cuda_utils.hpp>
+#include "../include/n2k/launch_rfimask_maker.hpp"
 
 using namespace std;
 using namespace gputils;

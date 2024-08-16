@@ -19,16 +19,19 @@ SHELL := /bin/bash
 
 HFILES = \
   include/n2k.hpp \
-  include/n2k_kernel.hpp
+  include/n2k/Correlator.hpp \
+  include/n2k/CorrelatorKernel.hpp \
+  include/n2k/launch_rfimask_maker.hpp \
+  include/n2k/launch_s0_kernel.hpp
 
 # Kernel filename syntax is kernel_{nstations}_{nfreq}.o
 OFILES = \
-  src/Correlator.o \
-  src/kernel_table.o \
-  src/make_rfimask.o \
-  src/precompute_offsets.o \
-  src/s0_kernel.o \
-  src/sk_globals.o \
+  src_lib/Correlator.o \
+  src_lib/kernel_table.o \
+  src_lib/make_rfimask.o \
+  src_lib/precompute_offsets.o \
+  src_lib/s0_kernel.o \
+  src_lib/sk_globals.o \
   template_instantiations/kernel_128_1.o \
   template_instantiations/kernel_128_2.o \
   template_instantiations/kernel_128_4.o \
@@ -60,15 +63,15 @@ LIBFILES = \
   lib/libn2k.so
 
 XFILES = \
-  test-correlator \
-  time-correlator \
-  test-make-rfimask \
-  test-s0-kernel \
-  test-sk-bias \
-  scratch
+  bin/test-correlator \
+  bin/time-correlator \
+  bin/test-make-rfimask \
+  bin/test-s0-kernel \
+  bin/test-sk-bias \
+  bin/scratch
 
 # Used in 'make clean', 'make source_files.txt'
-SRCDIRS = . include src template_instantiations
+SRCDIRS = . include include/n2k src_lib src_bin template_instantiations
 
 all: $(LIBFILES) $(XFILES)
 
@@ -110,22 +113,8 @@ lib/libn2k.so: $(OFILES)
 #	ar rcs $@ $^
 #	ranlib $@
 
-test-correlator: src/test-correlator.o lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
-	$(NVCC) -o $@ $^
-
-time-correlator: src/time-correlator.o lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
-	$(NVCC) -o $@ $^
-
-test-make-rfimask: src/test-make-rfimask.o lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
-	$(NVCC) -o $@ $^
-
-test-s0-kernel: src/test-s0-kernel.o lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
-	$(NVCC) -o $@ $^
-
-test-sk-bias: src/test-sk-bias.o lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
-	$(NVCC) -o $@ $^
-
-scratch: src/scratch.o $(OFILES) lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
+bin/%: src_bin/%.o lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
+	@mkdir -p bin
 	$(NVCC) -o $@ $^
 
 install: $(LIBFILES)

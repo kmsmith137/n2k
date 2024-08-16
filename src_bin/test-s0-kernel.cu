@@ -1,4 +1,7 @@
-#include "../include/n2k.hpp"
+#include "../include/n2k/launch_s0_kernel.hpp"
+#include <gputils/string_utils.hpp>
+#include <gputils/test_utils.hpp>
+#include <iostream>
 #include <numeric>  // std::lcm()
 
 using namespace std;
