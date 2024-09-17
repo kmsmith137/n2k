@@ -217,7 +217,7 @@ __global__ void sk_kernel(
 	//       junk                           if (laneId >= nred)
 
 	float den = __shfl_sync(FULL_MASK, y, laneId & ~3);
-	bool fsum_valid = (den >= T * Nds * feed_averaged_min_good_frac);
+	bool fsum_valid = (den >= S * Nds * feed_averaged_min_good_frac);
 	den = fsum_valid ? den : 1.0f;
 	y = fsum_valid ? (y/den) : (is_sigma2 ? -1.0f : 0.0f);
 

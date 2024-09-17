@@ -9,6 +9,8 @@ using namespace std;
 using namespace gputils;
 using namespace n2k;
 
+// TODO make sure rfimask_fstride is tested.
+
 
 struct TestInstance
 {
@@ -23,20 +25,28 @@ struct TestInstance
     double mu_min = 0.0;
     double mu_max = 0.0;
 
-    Array<float> out_sk_feed_averaged;   // shape (T,F,3)
-    Array<float> out_sk_single_feed;     // either empty array or shape (T,F,3,S)
-    Array<uint> out_rfimask;             // either empty array or shape (F,T*Nds/32), need not be contiguous
-    Array<uint> in_S012;                 // shape (T,F,3,S)
-    Array<uint8_t> in_bf_mask;           // length S (bad feed bask)
+    Array<float> out_sk_feed_averaged;    // shape (T,F,3)
+    Array<float> out_sk_single_feed ;     // shape (T,F,3,S)
+    Array<uint> out_rfimask;              // shape (F,T*Nds/32)
+    Array<uint> in_S012;                  // shape (T,F,3,S)
+    Array<uint8_t> in_bf_mask;            // length S (bad feed bask)
 
-    // Temp arrays used when generating the test instance.
+    // Temp quantities used when generating the test instance.
+    // All vectors are length-S.
+    vector<uint> S0b;
     vector<uint> S0;
     vector<uint> S1;
     vector<uint> S2;
-    vector<uint> S0b;
+    vector<double> sf_sk;
+    vector<double> sf_bias;
+    vector<double> sf_sigma;
+    double fsum_sk;
+    double fsum_bias;
+    double fsum_sigma;
+    bool rfimask;
     
     
-    TestInstance(long T_, long F_, long S_, long Nds_, bool have_sf_sk, bool have_rfimask)
+    TestInstance(long T_, long F_, long S_, long Nds_)
 	: T(T_), F(F_), S(S_), Nds(Nds_)
     {
 	assert(T > 0);
@@ -47,13 +57,10 @@ struct TestInstance
 	assert((Nds % 32) == 0);
 	
 	this->out_sk_feed_averaged = Array<float> ({T,F,3}, af_rhost | af_zero);
+	this->out_sk_single_feed = Array<float> ({T,F,3,S}, af_rhost | af_zero);
+	this->out_rfimask = Array<uint> ({F,(T*Nds)/32}, af_rhost | af_zero);
 	this->in_S012 = Array<uint> ({T,F,3,S}, af_rhost | af_zero);
 	this->in_bf_mask = Array<uint8_t> ({S}, af_rhost | af_zero);
-	
-	if (have_sf_sk)
-	    this->out_sk_single_feed = Array<float> ({T,F,3,S}, af_rhost | af_zero);
-	if (have_rfimask)
-	    this->out_rfimask = Array<uint> ({F,(T*Nds)/32}, af_rhost | af_zero);
 
 	this->sk_rfimask_sigmas = rand_uniform(0.5, 1.5);
 	this->single_feed_min_good_frac = rand_uniform(0.7, 0.8);
@@ -72,18 +79,65 @@ struct TestInstance
 	    for (int f = 0; f < F; f++) {
 		this->_init_S0b();
 		this->_init_S0_S1();
-		this->_init_S2();
+		this->_init_S2();  // also initializes output statistics (SK, rfimask).
 
 		for (int s = 0; s < S; s++) {
 		    this->in_S012.at({t,f,0,s}) = S0[s];
 		    this->in_S012.at({t,f,1,s}) = S1[s];
 		    this->in_S012.at({t,f,2,s}) = S2[s];
+		    this->out_sk_single_feed.at({t,f,0,s}) = sf_sk[s];
+		    this->out_sk_single_feed.at({t,f,1,s}) = sf_bias[s];
+		    this->out_sk_single_feed.at({t,f,2,s}) = sf_sigma[s];
 		}
+		
+		this->out_sk_feed_averaged.at({t,f,0}) = fsum_sk;
+		this->out_sk_feed_averaged.at({t,f,1}) = fsum_bias;
+		this->out_sk_feed_averaged.at({t,f,2}) = fsum_sigma;
+
+		for (int i = t*(Tds/32); i < (t+1)*(Tds/32); i++)
+		    this->out_rfimask.at({f,i}) = rfimask ? 0xffffffffU : 0;
 	    }
 	}
     }
 
+
+    inline bool _is_valid(double s0, double s1)
+    {
+	double mu = (s0 > 0.5) ? (s1/s0) : 0.0;
+	bool s0_valid = (s0 >= single_feed_min_good_frac * Tds);
+	bool s1_valid = (mu >= mu_min) && (mu <= mu_max);
+	return s0_valid && s1_valid;
+    }
     
+    inline double _compute_bias(double s0, double s1)
+    {
+	// FIXME placeholder for testing
+	double mu = (s0 > 0.5) ? (s0/s1) : 0;
+	return 0.01 * mu;
+    }
+    
+    inline double _compute_sigma(double s0)
+    {
+	// FIXME placeholder for testing
+	return (s0 > 0.5) ? sqrt(4/s0) : -1.0;
+    }
+
+    inline double _compute_sk(double s0, double s1, double s2, double b)
+    {
+	double u = (s0 > 1.5) ? ((s0+1)/(s0-1)) : 0.0;
+	double v = (s1 > 0.5) ? (s0 / (s1*s1)) : 0.0;
+	return u * (v*s2 - 1) - b;
+    }
+
+    // Inverts (s2 -> sk) at fixed (s0,s1).
+    inline double _invert_sk(double s0, double s1, double sk, double b)
+    {
+	double ru = (s0 > 0.5) ? ((s0-1)/(s0+1)) : 0.0;
+	double rv = (s0 > 0.5) ? ((s1*s1) / s0) : 0.0;
+	return rv * (ru*(s2+b) + 1);
+    }
+
+
     // Helper function called by constructor.
     void _init_bad_feed_mask()
     {
@@ -157,10 +211,17 @@ struct TestInstance
 	}
     }
 
-    // Helper function called by constructor.    
+    // Helper function called by constructor.
+    // Also initializes output arrays (SK, rfimask).
+    
     void _init_S2()
     {
 	for (;;) {
+	    double sum_w = 0.0;
+	    double sum_wsk = 0.0;
+	    double sum_wb = 0.0;
+	    double sum_wsigma2 = 0.0;
+
 	    for (int s = 0; s < S; s++) {
 		if ((S0[s] <= 1) || (S1[s] == 0)) {
 		    S2[s] = S1[s]*S1[s];
@@ -169,25 +230,58 @@ struct TestInstance
 
 		double s0 = S0[s];
 		double s1 = S1[s];
-		double mu = s1/s0;
-		double b = 0.01 * mu;  // FIXME placeholder for testing
-		double sigma = sqrt(4.0/s0);
 
+		double b = _compute_bias(s0, s1);
+		double sigma = _compute_sigma(s0);
 		double target_sk = 1.0 + sigma * sqrt(3.) * rand_uniform(-1.0,1.0);
-		double s2 = ((s0-1)/(s0+1) * (target_sk+b)) * (s1*s1/s0);
-		s2 = round(std::max(s2,0));
+		double s2 = _invert_sk(s0, s1, sk, b);
+		
+		s2 = max(s2, s1);
+		s2 = min(s2, 98*s1);
+		s2 = round(s2);
 		S2[s] = s2;
 
-		if (S0b[s] > 0) {
-		    double actual_sk = ((s0+1)/(s0-1) * (s0*s2/(s1*s1) - 1.0) - b);
-		    sum_w += s0;
-		    sum_wsk += s0 * actual_sk;
-		    sum_wsigma2 += s0 * s0 * sigma * sigma;
-		}
-	    }
-	}
+		double actual_sk = _compute_sk(s0, s1, s2, b);
+		bool sf_valid = _is_valid(s0, s1);
 
-	// Close corner case where 
+		sf_sk[s] = sf_valid ? actual_sk : 0.0;
+		sf_bias[s] = sf_valid ? b : 0.0;
+		sf_sigma[s] = sf_valid ? sigma : -1.0;
+		
+		double w = (sf_valid && in_bf_mask.at({s})) ? s0 : 0.0;
+		
+		sum_w += w;
+		sum_wsk += w * sf_sk[s];
+		sum_wb += w * sf_bias[s];
+		sum_wsigma2 += w * w * sf_sigma[s] * sf_sigma[s];
+	    }
+
+	    bool fsum_valid = (sum_w > (feed_averaged_min_good_frac * S * Nds));
+
+	    this->fsum_sk = fsum_valid ? (sum_wsk / sum_w) : 0.0;
+	    this->fsum_bias = fsum_valid ? (sum_wb / sum_w) : 0.0;
+	    this->fsum_sigma = fsum_valid ? (sqrt(sum_wsigma2) / sum_w) : -1.0;
+
+	    if (!fsum_valid) {
+		this->rfimask = 0;
+		return;
+	    }
+
+	    if (out_rfimask.data != NULL) {
+		bool rfi_good = fsum_valid
+		    && (fsum_sk >= 1.0f - sk_rfimask_sigmas * fsum_sigma)
+		    && (fsum_sk <= 1.0f + sk_rfimask_sigmas * fsum_sigma);
+		
+		for (int i = t*(Tds/32); i < (t+1)*(Tds/32); i++)
+		    out_rfimask.at({f,i}) = rfi_good ? 0xffffffffU : 0;
+	    }
+
+	bool 
+	// Close loophole where feed-averaged SK is too close to threshold,
+	// making the 
+	
+	if (sum_w 
+	// Close loophole where .
 	
 	if (sum_w < min_ *sum_w)
 	    return;
@@ -228,35 +322,26 @@ static void reference_sk_kernel(
 	    double sum_wsigma2 = 0.0;
 	    
 	    for (int s = 0; s < S; s++) {
-		double S0 = in_S012.at({t,f,0,s});
-		double S1 = in_S012.at({t,f,1,s});
-		double S2 = in_S012.at({t,f,2,s});
-		
-		double sf_good_frac = S0 / double(Nds);
-		double mu = (S0 > 0.5) ? (S1/S0) : 0;
-		
-		bool sf_valid = (sf_good_frac >= single_feed_min_good_frac)
-		    && (mu >= mu_min) && (mu <= mu_max);
+		double s0 = in_S012.at({t,f,0,s});
+		double s1 = in_S012.at({t,f,1,s});
+		double s2 = in_S012.at({t,f,2,s});
 
-		if (sf_valid)
-		    assert((S0 > 1.5) && (S1 > 0.5));
+		bool sf_valid = _is_valid(s0, s1);
+		double sf_b = sf_valid ? _compute_bias(s0, s1) : 0.0;
+		double sf_sk = sf_valid ? _compute_sk(s0, s1, s2, sf_b) : 0.0;
+		double sf_sigma = sf_valid ? _compute_sigma(s0) : -1.0;
+		double w = (sf_valid && in_bf_mask.at({s})) ? s0 : 0.0;
 		
-		double sf_b = sf_valid ? (0.01 * mu) : 0.0;   // FIXME placeholder for testing
-		double sf_sk = sf_valid ? ((S0+1.0)/(S0-1.0) * (S0*S2/(S1*S1) - 1.0) - sf_b) : 0.0;
-		double sf_sigma2 = sf_valid ? (4.0 / S0) : 0.0;
-		double sf_sigma = sf_valid ? sqrt(sf_sigma2) : -1.0;
+		sum_w += w;
+		sum_wsk += w * sf_sk;
+		sum_wb += w * sf_b;
+		sum_wsigma2 += w * w * sf_sigma * sf_sigma;
 
 		if (out_sk_single_feed.data) {
 		    out_sk_single_feed.at({t,f,0,s}) = sf_sk;
 		    out_sk_single_feed.at({t,f,0,s}) = sf_b;
 		    out_sk_single_feed.at({t,f,0,s}) = sf_sigma;
 		}
-		
-		double w = (sf_valid && in_bf_mask.at({s})) ? S0 : 0.0;
-		sum_w += w;
-		sum_wsk += w * sf_sk;
-		sum_wb += w * sf_b;
-		sum_wsigma2 += w*w * sf_sigma2;
 	    }
 
 	    double fsum_good_frac = sum_w / double(T*Nds);
