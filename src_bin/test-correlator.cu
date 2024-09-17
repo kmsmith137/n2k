@@ -13,6 +13,7 @@ using namespace n2k;
 // -------------------------------------------------------------------------------------------------
 //
 // unpack_4bit(), pack_4bit()
+// FIXME phase out, in favor of {pack,unpack}_e_array() defined in internals.cu.
 
 
 // Slow, intended only for testing!

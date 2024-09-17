@@ -5,7 +5,7 @@ using namespace std;
 using namespace gputils;
 
 
-// This is a good place to describe the Array layout for PL mask:
+// This is a good place to describe the array layout for PL mask:
 //
 //   - The PL mask is logically an array bool[T/2][F/4][S/8], where
 //     T is the number of time samples, F is number of freq channels,

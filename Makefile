@@ -21,16 +21,24 @@ HFILES = \
   include/n2k.hpp \
   include/n2k/Correlator.hpp \
   include/n2k/CorrelatorKernel.hpp \
+  include/n2k/bad_feed_mask.hpp \
+  include/n2k/device_inlines.hpp \
+  include/n2k/internals.hpp \
   include/n2k/launch_rfimask_maker.hpp \
   include/n2k/launch_s0_kernel.hpp
 
 # Kernel filename syntax is kernel_{nstations}_{nfreq}.o
 OFILES = \
   src_lib/Correlator.o \
+  src_lib/internals.o \
   src_lib/kernel_table.o \
   src_lib/make_rfimask.o \
   src_lib/precompute_offsets.o \
   src_lib/s0_kernel.o \
+  src_lib/s012_station_downsample.o \
+  src_lib/s012_time_downsample.o \
+  src_lib/s12_kernel.o \
+  src_lib/sk_kernel.o \
   src_lib/sk_globals.o \
   template_instantiations/kernel_128_1.o \
   template_instantiations/kernel_128_2.o \
@@ -65,8 +73,12 @@ LIBFILES = \
 XFILES = \
   bin/test-correlator \
   bin/time-correlator \
+  bin/test-helper-functions \
   bin/test-make-rfimask \
   bin/test-s0-kernel \
+  bin/test-s012-station-downsample \
+  bin/test-s012-time-downsample \
+  bin/test-s12-kernel \
   bin/test-sk-bias \
   bin/scratch
 
