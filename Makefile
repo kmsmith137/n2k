@@ -80,6 +80,7 @@ XFILES = \
   bin/test-s012-time-downsample \
   bin/test-s12-kernel \
   bin/test-sk-bias \
+  bin/test-sk-kernel \
   bin/scratch
 
 # Used in 'make clean', 'make source_files.txt'

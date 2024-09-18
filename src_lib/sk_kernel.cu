@@ -1,5 +1,6 @@
 #include "../include/n2k/launch_s0_kernel.hpp"
 #include "../include/n2k/bad_feed_mask.hpp"
+#include "../include/n2k.hpp"  // n2k::sk_globals
 
 #include <gputils/cuda_utils.hpp>
 
@@ -145,7 +146,7 @@ __global__ void sk_kernel(
 	S1 = sf_valid ? S1 : 1.0f;    // If invalid, set to 1.0 to avoid dividing by zero in SK.
 
 	// Single-feed (SK, b, sigma).
-	float b = 0.01f * mu;        // FIXME placeholder for testing
+	float b = 0.001f * mu;        // FIXME placeholder for testing
 	float sk = (S0+1)/(S0-1) * (S0*S2/(S1*S1) - 1) - b;
 	float sigma2 = 4.0f/S0;      // FIXME placeholder for testing
 	float sigma = sqrtf(sigma2);
@@ -271,7 +272,7 @@ __global__ void sk_kernel(
 
 	// Only meaningful if (laneId % 4 == 1).
 	bool rfi_good = fsum_valid
-	    && (y >= 1.0f - sk_rfimask_sigmas * sigma);
+	    && (y >= 1.0f - sk_rfimask_sigmas * sigma)
 	    && (y <= 1.0f + sk_rfimask_sigmas * sigma);
 
 	// The value of 'rfimask' is meaningful on all lanes, but only
@@ -388,7 +389,7 @@ void launch_sk_kernel(
     
     if (single_feed_min_good_frac <= 0.0)
 	throw runtime_error("launch_sk_kernel: expected single_feed_min_good_frac > 0.0");
-    if (feed_averaged_good_frac <= 0.0)
+    if (feed_averaged_min_good_frac <= 0.0)
 	throw runtime_error("launch_sk_kernel: expected single_feed_min_good_frac > 0.0");
     if (mu_min <= 0.0)
 	throw runtime_error("launch_sk_kernel: expected mu_min > 0.0");
@@ -491,21 +492,21 @@ void launch_sk_kernel(
     if (!out_sk_feed_averaged.is_fully_contiguous())
 	throw runtime_error("launch_sk_kernel: expected 'out_sk_feed_averaged' to be fully contiguous");
     if (!out_sk_feed_averaged.on_gpu())
-	throw runtime_error("launch_sk_kernel: expected 'out_sk_feed_averaged' to be in GPU memory);
+	throw runtime_error("launch_sk_kernel: expected 'out_sk_feed_averaged' to be in GPU memory");
     
     if (in_S012.ndim != 4)
 	throw runtime_error("launch_sk_kernel: expected in_S012.ndim == 4");
     if (!in_S012.is_fully_contiguous())
 	throw runtime_error("launch_sk_kernel: expected 'in_S012' to be fully contiguous");
     if (!in_S012.on_gpu())
-	throw runtime_error("launch_sk_kernel: expected 'out_sk_feed_averaged' to be in GPU memory);
+	throw runtime_error("launch_sk_kernel: expected 'out_sk_feed_averaged' to be in GPU memory");
     
     if (in_bf_mask.ndim != 1)
 	throw runtime_error("launch_sk_kernel: expected in_bf_mask.ndim == 1");    
     if (!in_bf_mask.is_fully_contiguous())
 	throw runtime_error("launch_sk_kernel: expected 'in_bf_mask' to be fully contiguous");
     if (!in_bf_mask.on_gpu())
-	throw runtime_error("launch_sk_kernel: expected 'out_sk_feed_averaged' to be in GPU memory);
+	throw runtime_error("launch_sk_kernel: expected 'out_sk_feed_averaged' to be in GPU memory");
     
     if (out_sk_feed_averaged.shape[0] != in_S012.shape[0])
 	throw runtime_error("launch_sk_kernel: inconsistent value of T between 'out_sk_feed_averaged' and 'in_S012' arrays");
@@ -531,7 +532,7 @@ void launch_sk_kernel(
 	if (!out_sk_single_feed.is_fully_contiguous())
 	    throw runtime_error("launch_sk_kernel: expected 'out_sk_single_feed' array to be fully contiguous");
 	if (!out_sk_single_feed.on_gpu())
-	    throw runtime_error("launch_sk_kernel: expected 'out_sk_single_feed' to be in GPU memory);
+	    throw runtime_error("launch_sk_kernel: expected 'out_sk_single_feed' to be in GPU memory");
     }
 
     if (out_rfimask.data != NULL) {
@@ -540,7 +541,7 @@ void launch_sk_kernel(
 	if (!out_rfimask.strides[0] != 1)
 	    throw runtime_error("launch_sk_kernel: expected inner (time) axis of 'out_rfimask' array to be contiguous");
 	if (!out_rfimask.on_gpu())
-	    throw runtime_error("launch_sk_kernel: expected 'out_rfimask' to be in GPU memory);
+	    throw runtime_error("launch_sk_kernel: expected 'out_rfimask' to be in GPU memory");
     }
     
     launch_sk_kernel(

@@ -33,7 +33,7 @@ namespace n2k {
 // WARNING: caller must call __syncthreads() before shared memory 'sp' can be re-used!
 
 
-__device__ uint load_bad_feed_mask(const uint *bf_mask, uint *sp, int S)
+__device__ inline uint load_bad_feed_mask(const uint *bf_mask, uint *sp, int S)
 {
     uint t0 = threadIdx.z;
     t0 = (t0 * blockDim.y) + threadIdx.y;

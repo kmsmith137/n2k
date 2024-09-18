@@ -1,6 +1,7 @@
 #include "../include/n2k/launch_s0_kernel.hpp"
 #include "../include/n2k/internals.hpp"
 
+#include <gputils/cuda_utils.hpp>
 #include <gputils/rand_utils.hpp>
 #include <gputils/test_utils.hpp>
 #include <iostream>
@@ -62,7 +63,7 @@ struct TestInstance
 
 	this->sk_rfimask_sigmas = rand_uniform(0.5, 1.5);
 	this->single_feed_min_good_frac = rand_uniform(0.7, 0.8);
-	this->feed_averaged_good_frac = rand_uniform(0.3, 0.4);
+	this->feed_averaged_min_good_frac = rand_uniform(0.3, 0.4);
 	this->mu_min = rand_uniform(3.0, 4.0);
 	this->mu_max = rand_uniform(20.0, 30.0);
 
@@ -92,7 +93,7 @@ struct TestInstance
 		this->out_sk_feed_averaged.at({t,f,1}) = fsum_bias;
 		this->out_sk_feed_averaged.at({t,f,2}) = fsum_sigma;
 
-		for (int i = t*(Tds/32); i < (t+1)*(Tds/32); i++)
+		for (int i = t*(Nds/32); i < (t+1)*(Nds/32); i++)
 		    this->out_rfimask.at({f,i}) = rfimask ? 0xffffffffU : 0;
 
 		if (rfimask)
@@ -113,7 +114,7 @@ struct TestInstance
     {
 	double ru = (s0 > 0.5) ? ((s0-1)/(s0+1)) : 0.0;
 	double rv = (s0 > 0.5) ? ((s1*s1) / s0) : 0.0;
-	return rv * (ru*(s2+b) + 1);
+	return rv * (ru*(sk+b) + 1);
     }
 
 
@@ -135,11 +136,11 @@ struct TestInstance
     // Helper function called by _init_tf_pair().
     void _init_valid_S0_S1(int s)
     {
-	int S0_edge = round(single_feed_good_frac * Tds);
-	S0[s] = rand_int(S0_edge+1, Tds+1);
+	uint S0_edge = round(single_feed_min_good_frac * Nds);
+	S0[s] = rand_int(S0_edge+1, Nds+1);
 	
-	int S1_edge0 = round(mu_min * S0[s]);
-	int S1_edge1 = round(mu_max * S0[s]);
+	uint S1_edge0 = round(mu_min * S0[s]);
+	uint S1_edge1 = round(mu_max * S0[s]);
 	S1[s] = rand_int(S1_edge0+1, S1_edge1);
     }
 
@@ -148,13 +149,13 @@ struct TestInstance
     void _init_invalid_S0_S1(int s)
     {
 	for (;;) {
-	    S0[s] = rand_int(-Tds/32, Tds+1);
+	    S0[s] = rand_int(-Nds/32, Nds+1);
 	    S0[s] = max(S0[s], 0);
 	    S1[s] = rand_int(0, 98*S0[s]);
 	    
-	    int S0_edge = round(single_feed_good_frac * Tds);
-	    int S1_edge0 = round(mu_min * S0[s]);
-	    int S1_edge1 = round(mu_max * S0[s]);
+	    uint S0_edge = round(single_feed_min_good_frac * Nds);
+	    uint S1_edge0 = round(mu_min * S0[s]);
+	    uint S1_edge1 = round(mu_max * S0[s]);
 
 	    if ((S0[s] < S0_edge) || (S1[s] < S1_edge0) || (S1[s] > S1_edge1))
 		return;
@@ -165,7 +166,7 @@ struct TestInstance
     {
 	double p1 = rand_uniform(-0.2, 1.0);
 	double p2 = rand_uniform(-0.2, 1.0);
-	double prob_sf_valid = max3(0.0, p1, p2);
+	double prob_sf_valid = max(max(p1,p2), 0.0);
 	
 	// The purpose of this outer loop is to allow restarts, if we end up in
 	// a situation where roundoff error may be an issue for the unit test
@@ -194,7 +195,7 @@ struct TestInstance
 		double b = 0.01 * mu;                           // FIXME placeholder for testing
 		double sigma = (s0 > 0.5) ? sqrt(4/s0) : -1.0;  // FIXME placeholder for testing
 		double target_sk = 1.0 + sigma * sqrt(3.) * rand_uniform(-1.0,1.0);
-		double s2 = _invert_sk(s0, s1, sk, b);
+		double s2 = _invert_sk(s0, s1, target_sk, b);
 
 		s2 = max(s2, s1);
 		s2 = min(s2, 98*s1);		
@@ -215,7 +216,7 @@ struct TestInstance
 		sum_wsigma2 += w * w * sf_sigma[s] * sf_sigma[s];
 	    }
 
-	    double sum_w_threshold = feed_averaged_min_good_frac * S * Tds;
+	    double sum_w_threshold = feed_averaged_min_good_frac * S * Nds;
 
 	    if (fabs(sum_w - sum_w_threshold) < 0.1)
 		continue;   // Restart (too close to boolean threshold)
@@ -246,7 +247,7 @@ struct TestInstance
 };
 
 
-static void test_sk_kernel(const TestInstance &ti, bool check_sf=true, bool check_rfimask=true)
+static void test_sk_kernel(const TestInstance &ti, bool check_sf_sk=true, bool check_rfimask=true)
 {    
     long T = ti.T;
     long F = ti.F;
@@ -254,7 +255,7 @@ static void test_sk_kernel(const TestInstance &ti, bool check_sf=true, bool chec
     long Nds = ti.Nds;
     
     cout << "test_sk_kernel: T=" << T << ", F=" << F << ", S=" << S << ", Nds=" << Nds
-	 << ", check_sf=" << check_sf << ", check_rfimask=" << check_rfimask
+	 << ", check_sf_sk=" << check_sf_sk << ", check_rfimask=" << check_rfimask
 	 << ", rfi_mask_frac=" << ti.rfi_mask_frac << endl;
     
     // Input arrays
@@ -305,12 +306,12 @@ static void test_sk_kernel()
     long T = rand_int(1, 21);
     long F = rand_int(1, 21);
     long S = 128 * rand_int(1, 17);
-    long Tds = 32 * rand_int(1, 11);
-    bool check_sf = (rand_uniform() < 0.9);
+    long Nds = 32 * rand_int(1, 11);
+    bool check_sf_sk = (rand_uniform() < 0.9);
     bool check_rfimask = (rand_uniform() < 0.9);
 
     TestInstance ti(T,F,S,Nds);
-    test_sk_kernel(ti, check_sf, check_rfimask);
+    test_sk_kernel(ti, check_sf_sk, check_rfimask);
 }
 
 
