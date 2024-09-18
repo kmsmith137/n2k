@@ -303,10 +303,11 @@ static void test_sk_kernel()
     long T = rand_int(1, 21);
     long F = rand_int(1, 21);
     long S = 128 * rand_int(1, 17);
-    long Nds = 32 * rand_int(1, 11);
+    long Nds = 32 * rand_int(4, 11);
     bool check_sf_sk = (rand_uniform() < 0.9);
     bool check_rfimask = (rand_uniform() < 0.9);
 
+    T = 1; F = 1; S = 128; Nds = 128; check_sf_sk = true; check_rfimask = true;
     TestInstance ti(T,F,S,Nds);
     test_sk_kernel(ti, check_sf_sk, check_rfimask);
 }

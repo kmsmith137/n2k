@@ -18,8 +18,8 @@ namespace n2k {
 __device__ inline float _reduce_pair(float x, float y, uint bit)
 {
     bool upper = (threadIdx.x & bit);
-    uint src = upper ? x : y;
-    uint dst = upper ? y : x;
+    float src = upper ? x : y;
+    float dst = upper ? y : x;
     
     dst += __shfl_sync(FULL_MASK, src, threadIdx.x ^ bit);
     return dst;
@@ -191,7 +191,7 @@ __global__ void sk_kernel(
     const uint wf = threadIdx.y;
     const uint ws = threadIdx.x >> 5;
     const uint s = (ws*Wt*Wf*4) + (wt*Wf*4) + (wf*4) + laneId;
-    
+
     if (laneId < 4)
 	shmem_red[s] = x;
 
@@ -200,7 +200,7 @@ __global__ void sk_kernel(
     // Part 3: this part runs on one warp!
     //  - read sum_{w,wsk,wb,wsigma2} from shared memory and fully reduce
     //  - write feed-averaged sk
-    //  - write compressed bitsmask (Wt*Wf) bits to shared memory.
+    //  - write compressed bitmask (Wt*Wf) bits to shared memory.
     //
     // Current code assumes Wt*Wf <= 8, and (Wt*Wf) is a power of two (could be relaxed).
     // FIXME could shave off a few clock cycles in this part.
@@ -220,7 +220,7 @@ __global__ void sk_kernel(
 	//       sum_e N_e b_e           if (laneId < nred) and (laneId % 4 == 2)
 	//       sum_e N_e^2 sigma_e^2   if (laneId < nred) and (laneId % 4 == 3)
 	//       junk                    if (laneId >= nred)
-
+	
 	// Replace sigma^2 -> sigma2 (only for laneId % 4 == 3)
 	bool is_sigma2 = (laneId < nred) && ((laneId & 3) == 3);
 	float z = sqrtf(is_sigma2 ? y : 0.0f);
