@@ -151,7 +151,7 @@ struct TestInstance
 	for (;;) {
 	    S0[s] = rand_int(-Nds/32, Nds+1);
 	    S0[s] = max(S0[s], 0);
-	    S1[s] = rand_int(0, 98*S0[s]);
+	    S1[s] = rand_int(0, 98*S0[s]+1);
 	    
 	    uint S0_edge = round(single_feed_min_good_frac * Nds);
 	    uint S1_edge0 = round(mu_min * S0[s]);
@@ -192,7 +192,7 @@ struct TestInstance
 		double s0 = S0[s];
 		double s1 = S1[s];
 		double mu = (s0 > 0.5) ? (s1/s0) : 0.0;
-		double b = 0.01 * mu;                           // FIXME placeholder for testing
+		double b = 0.001 * mu;                          // FIXME placeholder for testing
 		double sigma = (s0 > 0.5) ? sqrt(4/s0) : -1.0;  // FIXME placeholder for testing
 		double target_sk = 1.0 + sigma * sqrt(3.) * rand_uniform(-1.0,1.0);
 		double s2 = _invert_sk(s0, s1, target_sk, b);
@@ -287,9 +287,6 @@ static void test_sk_kernel(const TestInstance &ti, bool check_sf_sk=true, bool c
 	ti.Nds);
 
     CUDA_CALL(cudaDeviceSynchronize());
-    Array<float> out_sk_feed_averaged;    // shape (T,F,3)
-    Array<float> out_sk_single_feed ;     // shape (T,F,3,S)
-    Array<uint> out_rfimask;              // shape (F,T*Nds/32)
 
     if (check_sf_sk)
 	gputils::assert_arrays_equal(gpu_sk_single_feed, ti.out_sk_single_feed, "gpu_sf_sk", "ref_sf_sk", {"t","f","n","s"});
@@ -315,29 +312,8 @@ static void test_sk_kernel()
 }
 
 
-// FIXME delete this stupidity soon
-static void test_invert_sk()
-{
-    for (int i = 0; i < 10; i++) {
-	double s0 = rand_uniform(10, 20);
-	double s1 = rand_uniform(s0, 98*s0);
-	double s2 = rand_uniform(s1, 98*s1);
-	double b = rand_uniform(-0.1, 0.1);
-
-	double sk = TestInstance::_compute_sk(s0, s1, s2, b);
-	double s2x = TestInstance::_invert_sk(s0, s1, sk, b);
-	double eps = fabs(s2-s2x);
-
-	cout << "eps=" << eps<< ", s2=" << s2 << ", s2x=" << s2x << endl;
-	assert(eps < 1.0e-7);
-    }
-}
-
-
 int main(int argc, char **argv)
 {
-    test_invert_sk();
-
     for (int i = 0; i < 100; i++)
 	test_sk_kernel();
     

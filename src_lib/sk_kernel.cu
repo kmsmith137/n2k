@@ -364,14 +364,14 @@ void launch_sk_kernel(
 	throw runtime_error("launch_sk_kernel: expected 0 < S <= 8192");
     if (Nds <= 0)
 	throw runtime_error("launch_sk_kernel: expected Nds > 0");
-    if ((Nds % 32) == 0)
+    if ((Nds % 32) != 0)
 	throw runtime_error("launch_sk_kernel: expected Nds to be a multiple of 32");
     if (3*T*F*S >= INT_MAX)
 	throw runtime_error("launch_sk_kernel: product T*F*S is too large (32-bit overflow)");
     
     // This constraint comes from load_bad_feed_mask(), and could be relaxed if necessary.
     
-    if ((S % 128) == 0)
+    if ((S % 128) != 0)
 	throw runtime_error("launch_sk_kernel: expected S to be a multiple of 128.");
 
     // If an RFI bitmask is being computed, check 'rfimask_fstride' and 'sk_rfimask_sigmas' arguments,.
@@ -444,7 +444,7 @@ void launch_sk_kernel(
     // Assign blockDims.
     // Not much thought put into this!
     // Note that Wt*Wf must be a power of two, and <= 8. (See "Part 3" of kernel above.)
-    uint Ws = (S+1023)/1024 - 1;  // min value allowed by load_bad_feed_mask()
+    uint Ws = (S+1023)/1024;  // min value allowed by load_bad_feed_mask()
     uint Wt = 2;
     uint Wf = 2;
 
@@ -538,7 +538,7 @@ void launch_sk_kernel(
     if (out_rfimask.data != NULL) {
 	if (!out_rfimask.shape_equals({F,(T*Nds)/32}))
 	    throw runtime_error("launch_sk_kernel: 'out_rfimask' array has wrong shape (expected {F,(T*Nds)/32})");
-	if (!out_rfimask.strides[0] != 1)
+	if (out_rfimask.strides[1] != 1)
 	    throw runtime_error("launch_sk_kernel: expected inner (time) axis of 'out_rfimask' array to be contiguous");
 	if (!out_rfimask.on_gpu())
 	    throw runtime_error("launch_sk_kernel: expected 'out_rfimask' to be in GPU memory");
