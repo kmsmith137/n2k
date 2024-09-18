@@ -314,7 +314,7 @@ __global__ void sk_kernel(
 	uint ft = n / M;
 	uint m = n - ft*M;
 	uint f = ft / Nt;
-	uint t = ft - ft*Nt;
+	uint t = ft - f*Nt;
 
 	// RFI mask is in (bit positions % 4 == 1), see above.
 	int bit = 4 * (t*Wf + f) + 1;
