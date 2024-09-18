@@ -247,16 +247,20 @@ struct TestInstance
 };
 
 
-static void test_sk_kernel(const TestInstance &ti, bool check_sf_sk=true, bool check_rfimask=true)
+static void test_sk_kernel(const TestInstance &ti, bool check_sf_sk=true, bool check_rfimask=true, long rfimask_fstride=0)
 {    
     long T = ti.T;
     long F = ti.F;
     long S = ti.S;
     long Nds = ti.Nds;
+
+    if (!rfimask_fstride)
+	rfimask_fstride = (T*Nds)/32;
     
     cout << "test_sk_kernel: T=" << T << ", F=" << F << ", S=" << S << ", Nds=" << Nds
 	 << ", check_sf_sk=" << check_sf_sk << ", check_rfimask=" << check_rfimask
-	 << ", rfi_mask_frac=" << ti.rfi_mask_frac << endl;
+	 << ", rfimask_fstride=" << rfimask_fstride << ", rfi_mask_frac=" << ti.rfi_mask_frac
+	 << endl;
     
     // Input arrays
     Array<uint> gpu_S012 = ti.in_S012.to_gpu();
@@ -271,7 +275,7 @@ static void test_sk_kernel(const TestInstance &ti, bool check_sf_sk=true, bool c
     if (check_sf_sk)
 	gpu_sk_single_feed = Array<float> ({T,F,3,S}, af_gpu | af_random);
     if (check_rfimask)
-	gpu_rfimask = Array<uint> ({F,(T*Nds)/32}, af_gpu | af_random);
+	gpu_rfimask = Array<uint> ({F,(T*Nds)/32}, {rfimask_fstride,1}, af_gpu | af_random);
     
     launch_sk_kernel(
         gpu_sk_feed_averaged,
@@ -306,15 +310,16 @@ static void test_sk_kernel()
     long Nds = 32 * rand_int(4, 11);
     bool check_sf_sk = (rand_uniform() < 0.9);
     bool check_rfimask = (rand_uniform() < 0.9);
+    long rfimask_fstride = rand_int((T*Nds)/32, (T*Nds)/16);
 
     TestInstance ti(T,F,S,Nds);
-    test_sk_kernel(ti, check_sf_sk, check_rfimask);
+    test_sk_kernel(ti, check_sf_sk, check_rfimask, rfimask_fstride);
 }
 
 
 int main(int argc, char **argv)
 {
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 500; i++)
 	test_sk_kernel();
     
     return 0;
