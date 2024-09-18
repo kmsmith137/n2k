@@ -46,6 +46,42 @@ extern void launch_s012_time_downsample_kernel(gputils::Array<uint> &Sout, const
 extern void launch_s012_station_downsample_kernel(uint *Sout, const uint *Sin, const uint8_t *bf_mask, long M, long S, cudaStream_t stream=0);
 extern void launch_s012_station_downsample_kernel(gputils::Array<uint> &Sout, const gputils::Array<uint> &Sin, const gputils::Array<uint8_t> &bf_mask, cudaStream_t stream=0);
 
+
+// Bare-pointer interface.
+extern void launch_sk_kernel(
+    float *out_sk_feed_averaged,          // Shape (T,F,3)
+    float *out_sk_single_feed,            // Shape (T,F,3,S), can be NULL
+    uint *out_rfimask,                    // Shape (F,T*Nds/32), can be NULL
+    const uint *in_S012,                  // Shape (T,F,3,S)
+    const uint8_t *in_bf_mask,            // Length S (bad feed mask)
+    long rfimask_fstride,                 // Only used if (out_rfimask != NULL). NOTE: uint32 stride, not bit stride!
+    double sk_rfimask_sigmas,             // RFI masking threshold in "sigmas" (only used if out_rfimask != NULL)
+    double single_feed_min_good_frac,     // For single-feed SK-statistic (threshold for validity)
+    double feed_averaged_min_good_frac,   // For feed-averaged SK-statistic (threshold for validity)
+    double mu_min,                        // For single-feed SK-statistic (threshold for validity)
+    double mu_max,                        // For single-feed SK-statistic (threshold for validity)
+    long Nds,                             // Downsampling factor used to construct S012 array (before sk_kernel() was called)
+    long T,                               // Number of downsampled times in S012 array
+    long F,                               // Number of frequency channels
+    long S,                               // Number of stations (= 2 * dishes)
+    cudaStream_t stream = 0);
+
+
+// gputils::Array<> interface.
+extern void launch_sk_kernel(
+    gputils::Array<float> &out_sk_feed_averaged,   // Shape (T,F,3)
+    gputils::Array<float> &out_sk_single_feed,     // Either empty array or shape (T,F,3,S)
+    gputils::Array<uint> &out_rfimask,             // Either empty array or shape (F,T*Nds/32), need not be contiguous
+    const gputils::Array<uint> &in_S012,           // Shape (T,F,3,S)
+    const gputils::Array<uint8_t> &in_bf_mask,     // Length S (bad feed bask)
+    double sk_rfimask_sigmas,                      // RFI masking threshold in "sigmas" (only used if out_rfimask != NULL)
+    double single_feed_min_good_frac,              // For single-feed SK-statistic (threshold for validity)
+    double feed_averaged_min_good_frac,            // For feed-averaged SK-statistic (threshold for validity)
+    double mu_min,                                 // For single-feed SK-statistic (threshold for validity)
+    double mu_max,                                 // For single-feed SK-statistic (threshold for validity)
+    long Nds,                                      // Downsampling factor used to construct S012 array (before sk_kernel() was called)
+    cudaStream_t stream = 0);
+
 			
 } // namespace n2k
 

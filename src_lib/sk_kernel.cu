@@ -16,14 +16,20 @@ namespace n2k {
 // Helper for reduce_four().
 __device__ inline float _reduce_pair(float x, float y, uint bit)
 {
-    bool flag = (threadIdx.x & bit);
-    uint src = flag ? x : y;
-    uint dst = flag ? y : x;
+    bool upper = (threadIdx.x & bit);
+    uint src = upper ? x : y;
+    uint dst = upper ? y : x;
     
     dst += __shfl_sync(FULL_MASK, src, threadIdx.x ^ bit);
     return dst;
 }
 
+
+// reduce_four() returns:
+//   (x0 summed over all lanes)  if laneId % 4 == 0
+//   (x1 summed over all lanes)  if laneId % 4 == 1
+//   (x2 summed over all lanes)  if laneId % 4 == 2
+//   (x3 summed over all lanes)  if laneId % 4 == 3
 
 __device__ inline float reduce_four(float x0, float x1, float x2, float x3)
 {
@@ -56,7 +62,7 @@ __device__ inline float reduce_four(float x0, float x1, float x2, float x3)
 //
 //   uint bf[Nbf];           // temp buffer for load_bad_feed_mask(), Nbf = max(S/32,32)
 //   float red[4*W];         // temp reduce buffer, layout (Ws,Wt,Wf,4).
-//   uint rfimask[1];
+//   uint rfimask[32];       // 32 copies of same 4-byte uint
 
 __global__ void sk_kernel(
     float *out_sk_feed_averaged,         // Shape (T,F,3),
@@ -70,7 +76,7 @@ __global__ void sk_kernel(
     float feed_averaged_min_good_frac,   // For feed-averaged SK-statistic (threshold for validity)
     float mu_min,                        // For single-feed SK-statistic (threshold for validity)
     float mu_max,                        // For single-feed SK-statistic (threshold for validity)
-    int Nds,                             // Downsampling factor used to construct S012 array (before calling sk_kernel())
+    int Nds,                             // Downsampling factor used to construct S012 array (before sk_kernel() was called)
     int T,                               // Number of time samples in S012 array (after downsampling by Tds)
     int F,                               // Number of frequency channels
     int S)                               // Number of stations (= 2*dishes)
@@ -80,7 +86,7 @@ __global__ void sk_kernel(
     const uint Wf = blockDim.y;
     const uint Ws = blockDim.x >> 5;
     
-    const uint warpId = (blockIdx.z * Wf * Ws) + (blockIdx.y * Ws) + (threadIdx.x >> 5);
+    const uint warpId = (threadIdx.z * Wf * Ws) + (threadIdx.y * Ws) + (threadIdx.x >> 5);
     const uint laneId = (threadIdx.x & 31);
     
     // Shared memory layout.
@@ -110,14 +116,14 @@ __global__ void sk_kernel(
     
     in_S012 += in_ix;
     out_sk_single_feed = write_sf ? (out_sk_single_feed + in_ix) : NULL;
-    
+
     // Reminder: load_bad_feed_mask() (defined in include/n2k/bad_feed_mask.hpp)
     // reads the bad feed mask, and permutes bits so that 'bf' contains relevant
     // bits for this thread.
     
     uint bf = load_bad_feed_mask(in_bf_mask, shmem_bf, S);
     // No __syncthreads() needed here, since 'shmem_bf' is not re-used below.
-    
+
     // Accumulators (for accumulating single-feed SK into feed-averaged SK)
     float sum_w = 0;
     float sum_wsk = 0;
@@ -126,11 +132,12 @@ __global__ void sk_kernel(
 
     // Loop over stations.
     for (int s = threadIdx.x; s < S; s += blockDim.x) {
-	float S0 = in_S012[s];
-	float S1 = in_S012[s+S];
-	float S2 = in_S012[s+2*S];
+	float S0 = in_S012[s];        // uint -> float
+	float S1 = in_S012[s+S];      // uint -> float
+	float S2 = in_S012[s+2*S];    // uint -> float
 
-	bool sf_valid = (S0 >= Nds * single_feed_min_good_frac);
+	float S0_min = Nds * single_feed_min_good_frac - 0.1f;
+	bool sf_valid = (S0 >= S0_min);
 	S0 = sf_valid ? S0 : 2.0f;    // If invalid, set to 2.0 to avoid dividing by zero in SK.
 
 	float mu = S1 / S0;
@@ -140,7 +147,7 @@ __global__ void sk_kernel(
 	// Single-feed (SK, b, sigma).
 	float b = 0.01f * mu;        // FIXME placeholder for testing
 	float sk = (S0+1)/(S0-1) * (S0*S2/(S1*S1) - 1) - b;
-	float sigma2 = 4.0f/S0;     // FIXME placeholder for testing
+	float sigma2 = 4.0f/S0;      // FIXME placeholder for testing
 	float sigma = sqrtf(sigma2);
 
 	// Write single-feed SK statistics (sk,b,sigma) to 'out_sk_single_feed'.
@@ -166,11 +173,19 @@ __global__ void sk_kernel(
     }
 
     // Part 2: partially reduce sum_{w,wsk,wb,wsigma2} and write to shared memory.
-    // ("Partially reduce" means that a factor-Ws reduction remains.)
+    // ("Partially reduce" means that we have reduced over all lanes in each warp,
+    //  but we still need to do a factor-Ws reduction over "x-warps".)
 
     float x = reduce_four(sum_w, sum_wsk, sum_wb, sum_wsigma2);
-    
-    // shmem_red has shape (Ws,Wt,Wf,4).
+
+    // At this point,
+    //   x = (partially reduced sum_w)         if laneId % 4 == 0
+    //       (partially reduced sum_wsk)       if laneId % 4 == 1
+    //       (partially reduced sum_wb)        if laneId % 4 == 2
+    //       (partially reduced sum_wsigma2)   if laneId % 4 == 3
+    //
+    // Next step is to write x to shared memory ('shmem_red' with shape (Ws,Wt,Wf,4)).
+
     const uint wt = threadIdx.z;
     const uint wf = threadIdx.y;
     const uint ws = threadIdx.x >> 5;
@@ -204,7 +219,8 @@ __global__ void sk_kernel(
 	//       sum_e N_e b_e           if (laneId < nred) and (laneId % 4 == 2)
 	//       sum_e N_e^2 sigma_e^2   if (laneId < nred) and (laneId % 4 == 3)
 	//       junk                    if (laneId >= nred)
-	
+
+	// Replace sigma^2 -> sigma2 (only for laneId % 4 == 3)
 	bool is_sigma2 = (laneId < nred) && ((laneId & 3) == 3);
 	float z = sqrtf(is_sigma2 ? y : 0.0f);
 	y = is_sigma2 ? z : y;
@@ -216,8 +232,10 @@ __global__ void sk_kernel(
 	//       sqrt[ sum_e N_e^2 sigma_e^2 ]  if (laneId < nred) and (laneId % 4 == 3)
 	//       junk                           if (laneId >= nred)
 
+	// Broadcast (sum_e N_e) from (laneId % 4 == 0) to all lanes.
 	float den = __shfl_sync(FULL_MASK, y, laneId & ~3);
-	bool fsum_valid = (den >= S * Nds * feed_averaged_min_good_frac);
+	float S0_min = S * Nds * feed_averaged_min_good_frac - 0.1f;
+	bool fsum_valid = (den >= S0_min);
 	den = fsum_valid ? den : 1.0f;
 	y = fsum_valid ? (y/den) : (is_sigma2 ? -1.0f : 0.0f);
 
@@ -228,11 +246,12 @@ __global__ void sk_kernel(
 	//       (\tilde sigma if fsum_valid else -1)  if (laneId < nred) and (laneId % 4 == 3)
 	//       junk                                  if (laneId >= nred)
 
-	// Write feed-averaged SK-statistic to global memory ('out_sk_feed_averaged')
-	// output array shape = (T,F,3)
+	// Write feed-averaged SK-statistic to global memory ('out_sk_feed_averaged').
+	// Note output array shape = (T,F,3).
+	// FIXME could shave off a few clock cycles here.
 
 	uint tf = laneId >> 2;
-	uint t = tf / Wf;        // FIXME optimize out integer division here?
+	uint t = tf / Wf;
 	uint f = tf - t*Wf;
 	int m = (laneId & 3) - 1;
 
@@ -255,13 +274,14 @@ __global__ void sk_kernel(
 	    && (y >= 1.0f - sk_rfimask_sigmas * sigma);
 	    && (y <= 1.0f + sk_rfimask_sigmas * sigma);
 
-	// Only (bit positions % 4 == 1) are meaningful.
+	// The value of 'rfimask' is meaningful on all lanes, but only
+	// bits with (bit index % 4 == 1) in 'rfimask' are meaningful.
 	uint rfimask = __ballot_sync(FULL_MASK, rfi_good);
 	rfimask &= 0x22222222;  // clear meaningless bits to avoid confusion
 	
 	// Write bitmask to shared memory (subsequent code must "remember" that
 	// the mask is in bit positions % 4 == 1).
-	shmem_rfi[0] = rfimask;
+	shmem_rfi[laneId] = rfimask;
     }
 
     if (out_rfimask == NULL)
@@ -297,7 +317,7 @@ __global__ void sk_kernel(
 
 	// RFI mask is in (bit positions % 4 == 1), see above.
 	int bit = 4 * (t*Wf + f) + 1;
-	uint val = (shmem_rfi[0] & (1 << bit)) ? 0xffffffffU : 0;
+	uint val = (shmem_rfi[laneId] & (1 << bit)) ? 0xffffffffU : 0;
 
 	// Index in out_rfimask (shape (F,T*M) with stride rfimask_fstride).
 	int out_ix = (f+fb)*rfimask_fstride + (t+tb)*M + m;
@@ -307,21 +327,21 @@ __global__ void sk_kernel(
 
 
 void launch_sk_kernel(
-    float *out_sk_feed_averaged,   // Shape (T,F,3)
-    float *out_sk_single_feed,     // Shape (T,F,3,S), can be NULL
-    uint *out_rfimask,             // Shape (F,T*Nds/32), can be NULL
-    const uint *in_S012,           // Shape (T,F,3,S)
-    const uint8_t *in_bf_mask,     // Length S (bad feed mask)
-    long rfimask_fstride,          // Only used if (out_rfimask != NULL). NOTE: uint32 stride, not bit stride!
+    float *out_sk_feed_averaged,          // Shape (T,F,3)
+    float *out_sk_single_feed,            // Shape (T,F,3,S), can be NULL
+    uint *out_rfimask,                    // Shape (F,T*Nds/32), can be NULL
+    const uint *in_S012,                  // Shape (T,F,3,S)
+    const uint8_t *in_bf_mask,            // Length S (bad feed mask)
+    long rfimask_fstride,                 // Only used if (out_rfimask != NULL). NOTE: uint32 stride, not bit stride!
     double sk_rfimask_sigmas,             // RFI masking threshold in "sigmas" (only used if out_rfimask != NULL)
-    double single_feed_min_good_frac,     // See comments in sk_kernel.hpp
-    double feed_averaged_min_good_frac,   // See comments in sk_kernel.hpp
-    double mu_min,                         // See comments in sk_kernel.hpp
-    double mu_max,                         // See comments in sk_kernel.hpp
-    long Nds,                       // S012 downsampling factor (only used if out_rfimask != NULL)
-    long T,                         // Number of downsampled times in S012 array
-    long F,                         // Number of frequency channels
-    long S,                         // Number of stations (= 2 * dishes)
+    double single_feed_min_good_frac,     // For single-feed SK-statistic (threshold for validity)
+    double feed_averaged_min_good_frac,   // For feed-averaged SK-statistic (threshold for validity)
+    double mu_min,                        // For single-feed SK-statistic (threshold for validity)
+    double mu_max,                        // For single-feed SK-statistic (threshold for validity)
+    long Nds,                             // Downsampling factor used to construct S012 array (before sk_kernel() was called)
+    long T,                               // Number of downsampled times in S012 array
+    long F,                               // Number of frequency channels
+    long S,                               // Number of stations (= 2 * dishes)
     cudaStream_t stream)
 {
     // Check for NULL pointers.
@@ -347,36 +367,92 @@ void launch_sk_kernel(
 	throw runtime_error("launch_sk_kernel: expected Nds to be a multiple of 32");
     if (3*T*F*S >= INT_MAX)
 	throw runtime_error("launch_sk_kernel: product T*F*S is too large (32-bit overflow)");
+    
+    // This constraint comes from load_bad_feed_mask(), and could be relaxed if necessary.
+    
+    if ((S % 128) == 0)
+	throw runtime_error("launch_sk_kernel: expected S to be a multiple of 128.");
 
-    // Check rfimask_fstride (but only if out_rfimask != NULL)
-    // Including 32-bit overflow.
-
+    // If an RFI bitmask is being computed, check 'rfimask_fstride' and 'sk_rfimask_sigmas' arguments,.
+    
     if (out_rfimask != NULL) {
-	// Check rfimask_fstride
 	if (std::abs(rfimask_fstride) < (T*(Nds/32)))
 	    throw runtime_error("launch_sk_kernel: rfimask_fstride is too small");
 	if (F * std::abs(rfimask_fstride) >= INT_MAX)
 	    throw runtime_error("launch_sk_kernel: product F*rfimask_fstride is too large (32-bit overflow)");
+	if (sk_rfimask_sigmas <= 0.0)
+	    throw runtime_error("launch_sk_kernel: expected sk_rfimask_sigmas > 0.0");
     }
-    
-    // This constraint comes from load_bad_feed_mask(), and could be relaxed if necessary.    
-    if ((S % 128) == 0)
-	throw runtime_error("launch_sk_kernel: expected S to be a multiple of 128");
 
-    // Check sk_rfimask_sigmas (only if rfimask != null)
-    // Bounds checking on good_fracs.
-    // Bounds checking on mu_min, mu_muax
+    // Some trivial constraints on thresholds.
     
-    // Not much thought put into these!
-    // Note that Wt*Wf must be a power of two, and <= 8.
+    if (single_feed_min_good_frac <= 0.0)
+	throw runtime_error("launch_sk_kernel: expected single_feed_min_good_frac > 0.0");
+    if (feed_averaged_good_frac <= 0.0)
+	throw runtime_error("launch_sk_kernel: expected single_feed_min_good_frac > 0.0");
+    if (mu_min <= 0.0)
+	throw runtime_error("launch_sk_kernel: expected mu_min > 0.0");
+    if (mu_max >= 98.0)
+	throw runtime_error("launch_sk_kernel: expected mu_max < 98.0");
+    if (mu_min >= mu_max)
+	throw runtime_error("launch_sk_kernel: expected mu_min < mu_max");
+
+    // Some nontrivial constraints deriving from n2k::sk_globals.
+    
+    int n_min = n2k::sk_globals::n_min;
+    double x = double(n_min) / double(Nds);
+
+    if (Nds < n_min) {
+	stringstream ss;
+	ss << "launch_sk_kernel: Nds=" << Nds
+	   << " was specified, and min allowed value is " << n_min
+	   << " (= n2k::sk_globals::n_min), since the SK-interpolation table has not been"
+	   << " validated for smaller S0-values. This could be improved with some effort.";
+	throw runtime_error(ss.str());
+    }
+
+    if (single_feed_min_good_frac < x-0.01) {
+	stringstream ss;
+	ss << "launch_sk_kernel: single_feed_min_good_frac=" << single_feed_min_good_frac
+	   << " was specified, and min allowed value (for Nds=" << Nds << ") is " << x
+	   << " (= n2k::sk_globals::n_min / Nds), since the SK-interpolation table has not"
+	   << " been validated for smaller S0-values. This could be improved with some effort.";
+	throw runtime_error(ss.str());
+    }
+
+    if (mu_min < n2k::sk_globals::mu_min-0.01) {
+	stringstream ss;
+	ss << "launch_sk_kernel: mu_min=" << mu_min
+	   << " was specified, and min allowed value is " << mu_min
+	   << " (= n2k::sk_globals::mu_min), since the SK-interpolation table has not"
+	   << " been validated for smaller mu-values. This could be improved with some effort.";
+	throw runtime_error(ss.str());
+    }
+
+    if (mu_max > n2k::sk_globals::mu_max+0.01) {
+	stringstream ss;
+	ss << "launch_sk_kernel: mu_max=" << mu_max
+	   << " was specified, and max allowed value is " << mu_max
+	   << " (= n2k::sk_globals::mu_max), since the SK-interpolation table has not"
+	   << " been validated for larger mu-values. This could be improved with some effort.";
+	throw runtime_error(ss.str());
+    }
+
+    // Argument checking complete!
+
+    // Assign blockDims.
+    // Not much thought put into this!
+    // Note that Wt*Wf must be a power of two, and <= 8. (See "Part 3" of kernel above.)
     uint Ws = (S+1023)/1024 - 1;  // min value allowed by load_bad_feed_mask()
     uint Wt = 2;
     uint Wf = 2;
-    
+
+    // Assign gridDims.
     uint Bt = (T+Wt-1) / Wt;
     uint Bf = (F+Wf-1) / Wf;
-    uint shmem_nbytes = 4*max(S/32,32L) + 16*Wt*Wf*Ws + 4;
-    
+    uint shmem_nbytes = 4*max(S/32,32L) + 16*Wt*Wf*Ws + 128;
+
+    // Launch kernel!
     sk_kernel<<< {1,Bf,Bt}, {32*Ws,Wf,Wt}, shmem_nbytes, stream >>>
 	(out_sk_feed_averaged,
 	 out_sk_single_feed,
@@ -395,35 +471,42 @@ void launch_sk_kernel(
 
 
 void launch_sk_kernel(
-    Array<float> &out_sk_feed_averaged,   // shape (T,F,3)
-    Array<float> &out_sk_single_feed,     // either empty array or shape (T,F,3,S)
-    Array<uint> &out_rfimask,             // either empty array or shape (F,T*Nds/32), need not be contiguous
-    const Array<uint> &in_S012,           // shape (T,F,3,S)
-    const Array<uint8_t> &in_bf_mask,     // length S (bad feed bask)
+    Array<float> &out_sk_feed_averaged,   // Shape (T,F,3)
+    Array<float> &out_sk_single_feed,     // Either empty array or shape (T,F,3,S)
+    Array<uint> &out_rfimask,             // Either empty array or shape (F,T*Nds/32), need not be contiguous
+    const Array<uint> &in_S012,           // Shape (T,F,3,S)
+    const Array<uint8_t> &in_bf_mask,     // Length S (bad feed bask)
     double sk_rfimask_sigmas,             // RFI masking threshold in "sigmas" (only used if out_rfimask != NULL)
-    double single_feed_min_good_frac,     // See comments in sk_kernel.hpp
-    double feed_averaged_min_good_frac,   // See comments in sk_kernel.hpp
-    double mu_min,                         // See comments in sk_kernel.hpp
-    double mu_max,                         // See comments in sk_kernel.hpp
-    long Nds,                             // S012 downsampling factor
+    double single_feed_min_good_frac,     // For single-feed SK-statistic (threshold for validity)
+    double feed_averaged_min_good_frac,   // For feed-averaged SK-statistic (threshold for validity)
+    double mu_min,                        // For single-feed SK-statistic (threshold for validity)
+    double mu_max,                        // For single-feed SK-statistic (threshold for validity)
+    long Nds,                             // Downsampling factor used to construct S012 array (before sk_kernel() was called)
     cudaStream_t stream)
 {
-    // FIXME check arrays are on GPU
-    
     // Check 'out_sk_feed_averaged', 'in_S012', 'in_bf_mask' args.
     
     if (out_sk_feed_averaged.ndim != 3)
 	throw runtime_error("launch_sk_kernel: expected out_sk_feed_averaged.ndim == 3");
-    if (in_S012.ndim != 4)
-	throw runtime_error("launch_sk_kernel: expected in_S012.ndim == 4");
-    if (in_bf_mask.ndim != 1)
-	throw runtime_error("launch_sk_kernel: expected in_bf_mask.ndim == 1");
     if (!out_sk_feed_averaged.is_fully_contiguous())
 	throw runtime_error("launch_sk_kernel: expected 'out_sk_feed_averaged' to be fully contiguous");
+    if (!out_sk_feed_averaged.on_gpu())
+	throw runtime_error("launch_sk_kernel: expected 'out_sk_feed_averaged' to be in GPU memory);
+    
+    if (in_S012.ndim != 4)
+	throw runtime_error("launch_sk_kernel: expected in_S012.ndim == 4");
     if (!in_S012.is_fully_contiguous())
 	throw runtime_error("launch_sk_kernel: expected 'in_S012' to be fully contiguous");
+    if (!in_S012.on_gpu())
+	throw runtime_error("launch_sk_kernel: expected 'out_sk_feed_averaged' to be in GPU memory);
+    
+    if (in_bf_mask.ndim != 1)
+	throw runtime_error("launch_sk_kernel: expected in_bf_mask.ndim == 1");    
     if (!in_bf_mask.is_fully_contiguous())
 	throw runtime_error("launch_sk_kernel: expected 'in_bf_mask' to be fully contiguous");
+    if (!in_bf_mask.on_gpu())
+	throw runtime_error("launch_sk_kernel: expected 'out_sk_feed_averaged' to be in GPU memory);
+    
     if (out_sk_feed_averaged.shape[0] != in_S012.shape[0])
 	throw runtime_error("launch_sk_kernel: inconsistent value of T between 'out_sk_feed_averaged' and 'in_S012' arrays");
     if (out_sk_feed_averaged.shape[1] != in_S012.shape[1])
@@ -435,8 +518,8 @@ void launch_sk_kernel(
     if (in_S012.shape[2] != 3)
 	throw runtime_error("launch_sk_kernel: expected out_sk_feed_averaged.shape == (T,F,3)");
     
-    long T = out_sk_feed_averaged.shape[0];
-    long F = out_sk_feed_averaged.shape[1];
+    long T = in_S012.shape[0];
+    long F = in_S012.shape[1];
     long S = in_S012.shape[3];
     long rfimask_fstride = out_rfimask.data ? out_rfimask.strides[0] : 0;
 
@@ -447,13 +530,17 @@ void launch_sk_kernel(
 	    throw runtime_error("launch_sk_kernel: 'out_sk_single_feed' array has wrong shape (expected {T,F,3,S}");
 	if (!out_sk_single_feed.is_fully_contiguous())
 	    throw runtime_error("launch_sk_kernel: expected 'out_sk_single_feed' array to be fully contiguous");
+	if (!out_sk_single_feed.on_gpu())
+	    throw runtime_error("launch_sk_kernel: expected 'out_sk_single_feed' to be in GPU memory);
     }
 
     if (out_rfimask.data != NULL) {
 	if (!out_rfimask.shape_equals({F,(T*Nds)/32}))
 	    throw runtime_error("launch_sk_kernel: 'out_rfimask' array has wrong shape (expected {F,(T*Nds)/32})");
 	if (!out_rfimask.strides[0] != 1)
-	    throw runtime_error("launch_sk_kernel: expected time axis of 'out_rfimask' array to be contiguous");
+	    throw runtime_error("launch_sk_kernel: expected inner (time) axis of 'out_rfimask' array to be contiguous");
+	if (!out_rfimask.on_gpu())
+	    throw runtime_error("launch_sk_kernel: expected 'out_rfimask' to be in GPU memory);
     }
     
     launch_sk_kernel(
