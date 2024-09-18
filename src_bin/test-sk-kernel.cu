@@ -307,7 +307,6 @@ static void test_sk_kernel()
     bool check_sf_sk = (rand_uniform() < 0.9);
     bool check_rfimask = (rand_uniform() < 0.9);
 
-    T = 1; F = 1; S = 128; Nds = 128; check_sf_sk = true; check_rfimask = true;
     TestInstance ti(T,F,S,Nds);
     test_sk_kernel(ti, check_sf_sk, check_rfimask);
 }
