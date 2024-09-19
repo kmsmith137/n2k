@@ -3,6 +3,16 @@ import argparse
 
 from . import sk_bias
 
+def do_run_mcs2(rms, n, mu_min=0.0, mu_max=98.0):
+    """No bvec. Runs forever!"""
+    
+    pdf = sk_bias.Pdf(rms)
+    min_s1 = max(round(mu_min*n), 1)
+    max_s1 = min(round(mu_max*n), 98*n)
+    print(f'do_run_mcs2: {rms=} {n=} {mu_min=} {mu_max=} {min_s1=} {max_s1=}')
+    pdf.run_mcs(n, min_s1=min_s1, max_s1=max_s1)
+
+
 parser = argparse.ArgumentParser()
 subparsers = parser.add_subparsers(dest='command')
 
@@ -21,6 +31,12 @@ run_mcs.add_argument('pkl_infile')
 run_mcs.add_argument('rms', type=float)
 run_mcs.add_argument('n', type=int)
 run_mcs.add_argument('-v', '--verbose', action='store_true')
+
+run_mcs2 = subparsers.add_parser('run_mcs2')
+run_mcs2.add_argument('rms', type=float)
+run_mcs2.add_argument('n', type=int)
+run_mcs2.add_argument('mu_min', type=float, nargs='?', default=0.0)
+run_mcs2.add_argument('mu_max', type=float, nargs='?', default=98.0)
 
 run_unquantized_mcs = subparsers.add_parser('run_unquantized_mcs')
 run_unquantized_mcs.add_argument('n', type=int)
@@ -49,6 +65,8 @@ elif args.command == 'make_plot':
 elif args.command == 'run_mcs':
     interp = sk_bias.read_pickle(args.pkl_infile)
     interp.run_mcs(args.rms, args.n, verbose = args.verbose)
+elif args.command == 'run_mcs2':
+    do_run_mcs2(args.rms, args.n, args.mu_min, args.mu_max)
 elif args.command == 'run_unquantized_mcs':
     sk_bias.run_unquantized_mcs(args.n)
 elif args.command == 'run_transit_mcs':
