@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 
 
 def logspace(lo, hi, n):
+    assert n >= 2
     assert 0 < lo < hi
     return np.exp(np.linspace(np.log(lo), np.log(hi), n))
 
@@ -85,6 +86,8 @@ def ipow(x, n):
 
 
 def test_ipow():
+    """This test can be run from the command line with 'python -m sk_bias test'."""
+    
     for n in range(1,100):
         nelts = np.random.randint(1000, 2000)
         logr = np.random.uniform(-0.1, 0.1, nelts)
@@ -96,6 +99,57 @@ def test_ipow():
         
         print(f'{n=} {epsilon=}')
         assert np.all(epsilon < 1.0e-12)
+
+
+####################################################################################################
+
+
+def fit_polynomial(xvec, yvec):
+    """Super-stable and gratuitously slow!"""
+    
+    d = len(xvec)-1
+    assert d >= 0
+    assert xvec.shape == yvec.shape == (d+1,)
+    assert np.all(xvec[:-1] < xvec[1:])
+
+    mat = np.zeros((d+1,d+1))
+    mult = np.zeros(d+1)
+    coeffs = np.zeros(d+1)
+    residual = np.copy(yvec)
+    
+    for i in range(d+1):
+        row = xvec**i if (i > 0) else np.ones(d+1)
+        mult[i] = np.dot(row,row)**(-0.5)
+        mat[i,:] = row * mult[i]
+
+        coeffs[i] = np.dot(mat[i,:], residual)
+        residual -= coeffs[i] * mat[i,:]
+        
+    coeffs += np.linalg.solve(mat.T, residual)
+    coeffs *= mult
+    return coeffs
+
+
+def test_fit_polynomial():
+    """This test can be run from the command line with 'python -m sk_bias test'."""
+    
+    for iouter in range(5):
+        for d in range(1, 7):
+            maxsep = np.exp(np.random.uniform(-5,5))
+            dx = np.random.uniform(0.1*maxsep, maxsep, size=d+1)
+            xvec = np.cumsum(dx)
+            xvec -= np.mean(xvec)
+            xvec += np.random.uniform(-10*maxsep, 10*maxsep)
+            yvec = np.random.normal(size=d+1)
+            
+            coeffs = fit_polynomial(xvec, yvec)
+            
+            zvec = np.zeros(d+1)
+            for i in range(d+1):
+                zvec += coeffs[i] * xvec**i
+
+            eps = np.max(np.abs(yvec-zvec))
+            print(f'test_fit_polynomial({d=}): {eps=}')
 
 
 ####################################################################################################
@@ -135,6 +189,8 @@ class MCTracker:
         
     @classmethod
     def test(cls):
+        """This test can be run from the command line with 'python -m sk_bias test'."""
+        
         for iouter in range(10):
             ntot = np.random.randint(5, 11)
             x = np.random.normal(size=ntot)
@@ -159,7 +215,10 @@ class MCTracker:
 
 def run_unquantized_mcs(n):
     """Checks some expressions in the notes for <SK> and Var(SK) to all orders in n.
-    This function doesn't really belong in n2k, but it's convenient to sneak it in."""
+    This function doesn't really belong in n2k, but it's convenient to sneak it in.
+
+    This function can be run from the command line with 'python -m sk_bias run_unquantized_mcs'.
+    """
 
     nbatch = (2**21 // n) + 1
     tracker = MCTracker()
@@ -180,7 +239,10 @@ def run_unquantized_mcs(n):
 
 def run_transit_mcs(nt, ndish, brightness):
     """Checks some expressions in the notes for Var(SK) during a bright source transit.
-    This function doesn't really belong in n2k, but it's convenient to sneak it in."""
+    This function doesn't really belong in n2k, but it's convenient to sneak it in.
+
+    This function can be run from the command line with 'python -m sk_bias run_transit_mcs'.
+    """
 
     nbatch = (2**21 // (nt*ndish)) + 1
     tracker = MCTracker()
@@ -216,7 +278,9 @@ class Pdf:
     _rms_max = 1.0e6
     
     def __init__(self, rms):
-        """Take rms=None to get a 'saturating' PDF, which always takes values +/- 7."""
+        """Represents a quantized, clipped Gaussian PDF.
+        Take rms=None to get a 'saturating' PDF, which always takes values +/- 7.
+        """
 
         if rms is not None:
             assert self._rms_min <= rms <= self._rms_max
@@ -240,8 +304,7 @@ class Pdf:
 
     @classmethod
     def from_mu(cls, mu):
-        if mu == 98:
-            # FIXME a little fragile (should allow some roundoff error in comparison)
+        if abs(mu-98) < 1.0e-10:
             return cls(rms=None)
         
         assert mu >= 1.0e-6
@@ -261,8 +324,16 @@ class Pdf:
         return f'Px(rms={self.rms}, mu={self.mu}, b_large_n={self.b_large_n})'
 
 
-    def get_p1_p2(self, n):
-        assert n > 1
+    def get_p1_p2_p3(self, n):
+        """Returns length-(98*n+1) vectors p1, p2, p3.
+        
+            p1[s] = (probability of S1=s)
+            p2[s] = (probability of S1=s) * (expectation value of S2, given S1=s)
+            p3[s] = (probability of S1=s) * (expectation value of S2^2, given S1=s)
+
+        (Note: the variable names p1,p2,p3 aren't very good!)
+        """
+        assert n >= 2
         
         p0 = np.zeros(50)
         for i in range(8):
@@ -270,25 +341,44 @@ class Pdf:
 
         p1 = np.convolve(p0, p0)
         p2 = p1 * np.arange(99)**2
+        p3 = p1 * np.arange(99)**4
 
         nout = 98*n+1
         npad = round_up_to_power_of_two(nout)
 
         q1 = np.fft.rfft(p1, n=npad)
         q2 = np.fft.rfft(p2, n=npad)
-
-        qn1 = ipow(q1, n-1)
-        qn2 = n*qn1*q2
-        qn1 *= q1
+        q3 = np.fft.rfft(p3, n=npad)
+        
+        qn1 = ipow(q1, n-2)   # p1^{n-2}
+        qn2 = n * (qn1*q2)    # n p1^{n-2} p2
+        qn3 = n * (qn1*q1*q3) + (n-1) * (qn2*q2)   # n p1^{n-1} p3 + n(n-1) p1^{n-2} p2^2
+        qn1 *= (q1*q1)        # p1^n
+        qn2 *= q1             # n p1^{n-1} p2
         
         p1 = np.fft.irfft(qn1)[:nout]
         p2 = np.fft.irfft(qn2)[:nout]
+        p3 = np.fft.irfft(qn3)[:nout]
 
-        return p1, p2
+        return p1, p2, p3
 
 
     @staticmethod
-    def _bias_from_p1_p2(p1, p2, min_s1=None, max_s1=None, bvec=None):
+    def _bias_and_sigma_from_p1_p2_p3(p1, p2, p3, min_s1=None, max_s1=None, bvec=None):
+        """Returns (b,sigma), given (p1,p2,p3) and an optional bvec.
+
+        If 'bvec' is specified, it is a length-(98*n+1) array (i.e. same shape as (p1,p2,p3))
+        which is indexed as bvec[S1].
+
+        Recall definition of SK:
+           sk = (n+1)/(n-1) * (n*S2/S1^2 - 1) - b(S1)
+
+        In this function it's convenient to factorize as follows
+           x = S2 / S1^2
+           y = t*x - b(S1)          where t = n*(n+1)/(n-1)
+           sk = y - (n+1)/(n-1)
+        """
+        
         n = p1.size // 98
         assert p1.shape == p2.shape == (98*n+1,)
 
@@ -298,28 +388,45 @@ class Pdf:
             max_s1 = 98*n
         
         assert 1 <= min_s1 <= max_s1 <= 98*n
-
         i, j = min_s1, (max_s1+1)
-        t = np.sum(p1[i:j])
 
-        assert t >= 1.0e-12
-        mean_s2_s1 = np.sum(p2[i:j] / np.arange(i,j)**2) / t
-        mean_sk = (n+1) / (n-1) * (n*mean_s2_s1 - 1)
+        p1 = p1[i:j]
+        px = p2[i:j] / np.arange(i,j)**2
+        px2 = p3[i:j] / np.arange(i,j)**4
+        b = bvec[i:j] if (bvec is not None) else np.zeros(j-i)
 
-        if bvec is not None:
-            assert bvec.shape == (98*n+1,)
-            mean_sk -= np.dot(p1[i:j], bvec[i:j]) / t
+        # y = tx-b
+        t = n*(n+1)/(n-1)
+        py = t*px - b*p1
+        py2 = (t*t)*px2 - (2*t)*(b*px) + b*b*p1
 
-        return mean_sk - 1
+        den = np.sum(p1)
+        assert den >= 1.0e-12
+
+        mean_y = np.sum(py) / den
+        mean_y2 = np.sum(py2) / den
+
+        b = mean_y - (n+1)/(n-1) - 1
+        sigma = np.sqrt(mean_y2 - mean_y**2)
+        return b, sigma
 
     
-    def get_bias(self, n, min_s1=None, max_s1=None, bvec=None):
+    def get_bias_and_sigma(self, n, min_s1=None, max_s1=None, bvec=None):
+        """Returns b = <sk>-1 and sigma=Var(sk)^(1/2).
+
+        If 'bvec' is specified, it is a length-(98*n+1) array (i.e. same shape as (p1,p2,p3))
+        which is indexed as bvec[S1].
+        
+        Note:  sk = (n+1)/(n-1) * (n*S2/S1^2 - 1) - b(S1)
+        """
+
         if n is None:
             # Ignore (min_s1, max_s1, bvec)
-            return self.b_large_n
+            return self.b_large_n, 0.0
         else:
-            p1, p2 = self.get_p1_p2(n)
-            return self._bias_from_p1_p2(p1, p2, min_s1, max_s1, bvec)
+            p1, p2, p3 = self.get_p1_p2_p3(n)
+            b, sigma = self._bias_and_sigma_from_p1_p2_p3(p1, p2, p3, min_s1, max_s1, bvec)
+            return b, sigma
 
 
     def simulate_sk(self, n, nmc, min_s1=None, max_s1=None, bvec=None):
@@ -365,8 +472,7 @@ class Pdf:
         if nbatch is None:
             nbatch = 2**21 // n
 
-        predicted_bias = self.get_bias(n, min_s1, max_s1, bvec)
-        predicted_variance = 4./n
+        predicted_bias, predicted_sigma = self.get_bias_and_sigma(n, min_s1, max_s1, bvec)
         tracker = MCTracker()
         
         print(self)
@@ -380,59 +486,10 @@ class Pdf:
                 nmc = tracker.n
                 pvalid = nmc / (iouter * nbatch)
                 delta = tracker.mean - predicted_bias
-                var_ratio = tracker.var / predicted_variance
+                var_ratio = tracker.var / predicted_sigma**2
                 ivar = (1.0 / tracker.var) if (tracker.var > 0) else 0.0
                 sigmas = delta * (ivar * nmc)**0.5
                 print(f'    nmc={nmc}  {pvalid=}  mean_bias={tracker.mean}  predicted_mean={predicted_bias}  delta={delta}  sigmas={sigmas}  (var/var_predicted)={var_ratio}')
-
-
-####################################################################################################
-
-
-def fit_polynomial(xvec, yvec):
-    """Super-stable and gratuitously slow!"""
-    
-    d = len(xvec)-1
-    assert d >= 0
-    assert xvec.shape == yvec.shape == (d+1,)
-    assert np.all(xvec[:-1] < xvec[1:])
-
-    mat = np.zeros((d+1,d+1))
-    mult = np.zeros(d+1)
-    coeffs = np.zeros(d+1)
-    residual = np.copy(yvec)
-    
-    for i in range(d+1):
-        row = xvec**i if (i > 0) else np.ones(d+1)
-        mult[i] = np.dot(row,row)**(-0.5)
-        mat[i,:] = row * mult[i]
-
-        coeffs[i] = np.dot(mat[i,:], residual)
-        residual -= coeffs[i] * mat[i,:]
-        
-    coeffs += np.linalg.solve(mat.T, residual)
-    coeffs *= mult
-    return coeffs
-
-
-def test_fit_polynomial():
-    for iouter in range(5):
-        for d in range(1, 7):
-            maxsep = np.exp(np.random.uniform(-5,5))
-            dx = np.random.uniform(0.1*maxsep, maxsep, size=d+1)
-            xvec = np.cumsum(dx)
-            xvec -= np.mean(xvec)
-            xvec += np.random.uniform(-10*maxsep, 10*maxsep)
-            yvec = np.random.normal(size=d+1)
-            
-            coeffs = fit_polynomial(xvec, yvec)
-            
-            zvec = np.zeros(d+1)
-            for i in range(d+1):
-                zvec += coeffs[i] * xvec**i
-
-            eps = np.max(np.abs(yvec-zvec))
-            print(f'test_fit_polynomial({d=}): {eps=}')
 
 
 ####################################################################################################
