@@ -1,4 +1,5 @@
 #include "../include/n2k/internals.hpp"
+#include "../include/n2k/interpolation.hpp"
 #include "../include/n2k/bad_feed_mask.hpp"
 
 #include <iostream>
@@ -194,11 +195,74 @@ static void test_bad_feed_mask()
 
 
 // -------------------------------------------------------------------------------------------------
+//
+// Test load_sigma_coeffs() in interpolation.hpp
+
+
+// Launch with 1 block and T threads.
+//  out: shape (T,4)
+//  sigma_coeffs: shape (N,8)
+//  ix: shape (T,)
+
+__global__ void sigma_coeffs_test_kernel(float *out, const float *sigma_coeffs, const int *ix)
+{
+    int t = threadIdx.x;
+    load_sigma_coeffs<true> (sigma_coeffs, ix[t], out[4*t], out[4*t+1], out[4*t+2], out[4*t+3]);   // Debug=true
+}
+
+
+static void test_load_sigma_coeffs(int T, int N)
+{
+    cout << "test_load_sigma_coeffs(T=" << T << ", N=" << N << ")" << endl;
+    
+    Array<float> out({T,4}, af_uhost);
+    Array<float> coeffs({N,8}, af_rhost);
+    Array<int> ix({T}, af_rhost);
+
+    for (int i = 0; i < N; i++) {
+	float x = rand_uniform();
+	for (int j = 0; j < 8; j++)
+	    coeffs.at({i,j}) = x;
+    }
+    
+    for (int t = 0; t < T; t++) {
+	int i = rand_int(0, N-3);
+	ix.at({t}) = i;
+	
+	for (int j = 0; j < 4; j++)
+	    out.at({t,j}) = coeffs.at({i+j,0});
+    }
+
+    Array<float> out_gpu({T,4}, af_gpu | af_zero);
+    Array<float> coeffs_gpu = coeffs.to_gpu();
+    Array<int> ix_gpu = ix.to_gpu();
+
+    sigma_coeffs_test_kernel<<<1,T>>> (out_gpu.data, coeffs_gpu.data, ix_gpu.data);
+    CUDA_PEEK("sigma_coeffs_test_kernel");
+    CUDA_CALL(cudaDeviceSynchronize());
+
+    assert_arrays_equal(out, out_gpu, "cpu", "gpu", {"t","j"});
+}
+
+
+static void test_load_sigma_coeffs()
+{
+    for (int i = 0; i < 10; i++) {
+	int T = 32 * rand_int(1,10);
+	int N = rand_int(10, 100);
+	test_load_sigma_coeffs(T, N);
+    }
+}
+
+
+// -------------------------------------------------------------------------------------------------
+
 
 int main(int argc, char **argv)
 {
     test_pack_e_array(16, 32, 128);
     test_transpose_bit_with_lane();
     test_bad_feed_mask();
+    test_load_sigma_coeffs();
     return 0;
 }

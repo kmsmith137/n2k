@@ -77,6 +77,72 @@ __device__ uint transpose_bit_with_lane(uint x, uint lane)
 }
 
 
+template<bool Debug, bool Verbose=false, typename T>
+__device__ inline T bank_conflict_free_load(const T *p)
+{
+    static_assert(sizeof(T) == 4);
+    
+    if constexpr (Debug) {
+	int bank = (ulong(p) >> 2) & 31;  // assumes sizeof(T)==4
+	uint bit = 1U << bank;
+	uint bits = __reduce_or_sync(FULL_MASK, bit);
+
+	if constexpr (Verbose) {
+	    if (bits != FULL_MASK) {
+		for (int i = 0; i < 32; i++) {
+		    if ((threadIdx.x & 31) == i)
+			printf("bank_conflict_free assert failed: laneId=%d bank=%d\n", i, bank);
+		    __syncwarp();
+		}
+	    }
+	}
+
+	assert(bits == FULL_MASK);
+    }
+
+    return *p;
+}
+
+__device__ inline void swap_if(bool flag, float &x, float &y)
+{
+    float t = x;
+    x = flag ? y : x;
+    y = flag ? t : y;
+}
+
+// xout[j] = xin[(j+i) % 4)]
+__device__ inline void roll_forward(int i, float &x0, float &x1, float &x2, float &x3)
+{
+    bool flag2 = ((i & 2) != 0);
+    swap_if(flag2, x0, x2);
+    swap_if(flag2, x1, x3);
+
+    bool flag1 = ((i & 1) != 0);
+    float t = x0;
+    
+    x0 = flag1 ? x1 : x0;
+    x1 = flag1 ? x2 : x1;
+    x2 = flag1 ? x3 : x2;
+    x3 = flag1 ? t : x3;
+}
+
+// xout[j] = xin[(j-i) % 4]
+__device__ inline void roll_backward(int i, float &x0, float &x1, float &x2, float &x3)
+{
+    bool flag2 = ((i & 2) != 0);
+    swap_if(flag2, x0, x2);
+    swap_if(flag2, x1, x3);
+
+    bool flag1 = ((i & 1) != 0);
+    float t = x3;
+
+    x3 = flag1 ? x2 : x3;
+    x2 = flag1 ? x1 : x2;
+    x1 = flag1 ? x0 : x1;
+    x0 = flag1 ? t : x0;
+}
+
+
 }  // namespace n2k
 
 #endif // _N2K_DEVICE_INLINES_HPP
