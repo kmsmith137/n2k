@@ -46,7 +46,8 @@ __device__ inline float reduce_four(float x0, float x1, float x2, float x3)
 }
 
 
-// Based on Nada's kernel.
+
+// sk_kernel(): based on code by Nada El-Falou
 //
 // Constraints:
 //
@@ -64,6 +65,14 @@ __device__ inline float reduce_four(float x0, float x1, float x2, float x3)
 //   uint bf[Nbf];           // temp buffer for load_bad_feed_mask(), Nbf = max(S/32,32)
 //   float red[4*W];         // temp reduce buffer, layout (Ws,Wt,Wf,4).
 //   uint rfimask[32];       // 32 copies of same 4-byte uint
+//   float bsigma_coeffs[ncoeffs];   // currently ~4 KB
+//
+//   where ncoeffs = (12*bias_nx + 9*sigma_nx)  [ see interpolation.hpp for layout ]
+//
+// If (bias_nx,sigma_nx) = (128,64), then gmem/shmem footprint for coeffs is 2.25/8.25 KiB.
+// This can be compared to the single-threadblock gmem footprint of the S_012 arrays:
+// 12 KiB for pathfinder, 96 KiB for full CHORD. (General expr: Wt * Wf * S * 24 bytes)
+
 
 __global__ void sk_kernel(
     float *out_sk_feed_averaged,         // Shape (T,F,3),
@@ -71,6 +80,7 @@ __global__ void sk_kernel(
     uint *out_rfimask,                   // Shape (F,(T*Nds)/32), can be NULL
     const uint *in_S012,                 // Shape (T,F,3,S)
     const uint *in_bf_mask,              // Shape (S/4,)
+    const float *gmem_bsigma_coeffs,     // Shape (4*bias_nx + sigma_nx,)
     uint rfimask_fstride,                // Only used if (out_rfimask != NULL). NOTE: uint32 stride, not bit stride!
     float sk_rfimask_sigmas,             // RFI masking threshold in "sigmas" (only used if out_rfimask != NULL)
     float single_feed_min_good_frac,     // For single-feed SK-statistic (threshold for validity)
@@ -81,7 +91,7 @@ __global__ void sk_kernel(
     int T,                               // Number of time samples in S012 array (after downsampling by Tds)
     int F,                               // Number of frequency channels
     int S)                               // Number of stations (= 2*dishes)
-{
+{    
     // Parallelization.
     const uint Wt = blockDim.z;
     const uint Wf = blockDim.y;
@@ -89,6 +99,8 @@ __global__ void sk_kernel(
     
     const uint warpId = (threadIdx.z * Wf * Ws) + (threadIdx.y * Ws) + (threadIdx.x >> 5);
     const uint laneId = (threadIdx.x & 31);
+    const int threadId = 32*warpId + laneId;
+    const int nthreads = 32 * Wt * Wf * Ws;
     
     // Shared memory layout.
     extern __shared__ uint shmem_base[];
@@ -97,6 +109,11 @@ __global__ void sk_kernel(
     uint *shmem_bf = shmem_base;
     float *shmem_red = (float *) (shmem_bf + Nbf);
     uint *shmem_rfi = (uint *) (shmem_red + 4*Ws*Wf*Wt);
+    float *shmem_bsigma_coeffs = (float *) (shmem_rfi + 32);
+
+    // Copy interpolation coeffs from GPU global -> shared memory.
+    // Note: unpack_bias_sigma_coeffs() is defined in include/n2k/interpolation.hpp and calls __syncthreads().
+    unpack_bias_sigma_coeffs(gmem_bsigma_coeffs, shmem_bsigma_coeffs);
     
     // Part 1:
     //   - Compute single-feed SK statistics.
@@ -138,18 +155,23 @@ __global__ void sk_kernel(
 	float S2 = in_S012[s+2*S];    // uint -> float
 
 	float S0_min = Nds * single_feed_min_good_frac - 0.1f;
-	bool sf_valid = (S0 >= S0_min);
-	S0 = sf_valid ? S0 : 2.0f;    // If invalid, set to 2.0 to avoid dividing by zero in SK.
+	bool sf_valid = (S0 >= S0_min) && (S1 >= mu_min*S0) && (S1 <= mu_max*S0);
 
-	float mu = S1 / S0;
-	sf_valid = sf_valid && (mu >= mu_min) && (mu <= mu_max);
-	S1 = sf_valid ? S1 : 1.0f;    // If invalid, set to 1.0 to avoid dividing by zero in SK.
+	S0 = sf_valid ? S0 : 2.0f;    // If invalid, set to 2.0 to avoid dividing by zero below
+	S1 = sf_valid ? S1 : 1.0f;    // If invalid, set to 1.0 to avoid dividing by zero below
+	float rec_S0 = 1.0f / S0;
+	float mu = S1 * rec_S0;       // Always > 0 (even if invalid)
 
+	// Interpolation uses variables (x,y).
+	float x = logf(mu);       // Note: mu > 0 (even if !sf_valid)
+	float y = 1.0f / S0;      // Note: S0 > 0 (even if !sf_valid)
+	
 	// Single-feed (SK, b, sigma).
-	float b = 0.001f * mu;        // FIXME placeholder for testing
+	// Note: interpolate_bias() and interpolate_sigma() are defined in interpolation.hpp
+	float b = interpolate_bias(shmem_bsigma_coeffs, x, y);
+	float sigma = interpolate_sigma(shmem_bsigma_coeffs, x, y);
 	float sk = (S0+1)/(S0-1) * (S0*S2/(S1*S1) - 1) - b;
-	float sigma2 = 4.0f/S0;      // FIXME placeholder for testing
-	float sigma = sqrtf(sigma2);
+	float sigma2 = rec_S0 * sigma * sigma;   // note factor rec_S0 = (1/N) here.
 
 	// Write single-feed SK statistics (sk,b,sigma) to 'out_sk_single_feed'.
 	// Note: invalid entry is reprsented by (sk,b,sigma) = (0,0,-1).
