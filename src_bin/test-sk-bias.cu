@@ -1,4 +1,6 @@
 #include "../include/n2k.hpp"
+#include "../include/n2k/interpolation.hpp"
+
 #include <gputils/string_utils.hpp>
 #include <iostream>
 
@@ -12,40 +14,6 @@ static bool is_perfect_square(int n)
 	return false;
     int m = int(sqrt(n) + 0.5);
     return n == m*m;
-}
-
-// FIXME move somewhere more general?
-// t = (-1,0,1,2) returns (y0,y1,y2,y3) respectively.
-static double cubic_interpolate(double t, double y0, double y1, double y2, double y3)
-{
-    double d01 = (t) * (y1 - y0);
-    double d12 = (t-1) * (y2 - y1);
-
-    double c12 = (t) * (y2 - y1);
-    double c23 = (t-1) * (y3 - y2);
-    
-    double d012 = (t-1) * (c12 - d01) / 2.0;
-    double c123 = (t) * (c23 - d12) / 2.0;
-    
-    double c0123 = (t+1) * (c123 - d012) / 3.0;
-    return c0123 + d012 + c12 + y1;
-}
-
-
-static void test_cubic_interpolate()
-{
-    vector<double> y(4);
-
-    for (int i = 0; i < 10; i++) {
-	gputils::randomize(&y[0], 4);
-	for (int j = 0; j < 4; j++) {
-	    double z = cubic_interpolate(j-1, y[0], y[1], y[2], y[3]);
-	    double eps = std::abs(z - y[j]);
-	    assert(eps < 1.0e-12);
-	}
-    }
-
-    cout << "test_cubic_interpolate(): pass" << endl;
 }
 
 
@@ -174,8 +142,6 @@ int main(int argc, char **argv)
 
     double rms = gputils::from_str<double> (argv[1]);
     int n = gputils::from_str<int> (argv[2]);
-    
-    test_cubic_interpolate();  // sneaking this in
     cout << "Running Monte Carlos with rms=" << rms << ", n=" << n << endl;
 
     std::normal_distribution<double> dist(0, rms);

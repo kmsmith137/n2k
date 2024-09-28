@@ -168,6 +168,8 @@ __global__ void sk_kernel(
 	
 	// Single-feed (SK, b, sigma).
 	// Note: interpolate_bias() and interpolate_sigma() are defined in interpolation.hpp
+	// FIXME consider making computation of 'sk' more numerically stable.
+	
 	float b = interpolate_bias(shmem_bsigma_coeffs, x, y);
 	float sigma = interpolate_sigma(shmem_bsigma_coeffs, x, y);
 	float sk = (S0+1)/(S0-1) * (S0*S2/(S1*S1) - 1) - b;
