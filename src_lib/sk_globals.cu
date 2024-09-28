@@ -3,15 +3,6 @@
 namespace n2k {
 namespace sk_globals {
 
-double mu_min = 1.0;
-double mu_max = 90.0;
-double xmin = -0.03599847736264212;
-double xmax = 4.535808147692907;
-
-int nx = 128;
-int ny = 4;
-int n_min = 64;
-
 static double bias_coeffs[512] = {
   0.0018437357020770762,  0.4234818333361899,  3.084235857704284,  19.605219754737764,
   -0.0019930847752644976,  0.3432293516497397,  2.5582592122306935,  18.378343882520607,
@@ -143,6 +134,6 @@ static double bias_coeffs[512] = {
   -0.9799861495589,  0.03729282283224224,  0.028845838288358804,  0.022613654960999277
 };
 
-double *get_bias_coeffs() { return bias_coeffs; }
+double *get_bsigma_coeffs() { return bias_coeffs; }
 
 }}  // namespace n2k::global_sk

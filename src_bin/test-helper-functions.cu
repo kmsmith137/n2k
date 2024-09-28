@@ -196,6 +196,28 @@ static void test_bad_feed_mask()
 
 // -------------------------------------------------------------------------------------------------
 //
+// Test cubic_interpolate() in interpolation.hpp
+// FIXME this test could be improved.
+
+static void test_cubic_interpolate()
+{
+    vector<double> y(4);
+
+    for (int i = 0; i < 10; i++) {
+	gputils::randomize(&y[0], 4);
+	for (int j = 0; j < 4; j++) {
+	    double z = cubic_interpolate(double(j-1), y[0], y[1], y[2], y[3]);
+	    double eps = std::abs(z - y[j]);
+	    assert(eps < 1.0e-12);
+	}
+    }
+
+    cout << "test_cubic_interpolate(): pass" << endl;
+}
+
+
+// -------------------------------------------------------------------------------------------------
+//
 // Test load_sigma_coeffs() in interpolation.hpp
 
 
@@ -332,6 +354,7 @@ int main(int argc, char **argv)
     test_pack_e_array(16, 32, 128);
     test_transpose_bit_with_lane();
     test_bad_feed_mask();
+    test_cubic_interpolate();
     test_load_sigma_coeffs();
     test_load_bias_coeffs();
     return 0;

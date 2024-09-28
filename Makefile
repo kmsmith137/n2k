@@ -21,12 +21,14 @@ HFILES = \
   include/n2k.hpp \
   include/n2k/Correlator.hpp \
   include/n2k/CorrelatorKernel.hpp \
+  include/n2k/SkKernel.hpp \
   include/n2k/bad_feed_mask.hpp \
   include/n2k/device_inlines.hpp \
   include/n2k/internals.hpp \
   include/n2k/interpolation.hpp \
   include/n2k/launch_rfimask_maker.hpp \
-  include/n2k/launch_s0_kernel.hpp
+  include/n2k/launch_s0_kernel.hpp \
+  include/n2k/sk_globals.hpp
 
 # Kernel filename syntax is kernel_{nstations}_{nfreq}.o
 OFILES = \

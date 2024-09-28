@@ -1,6 +1,7 @@
-#include "../include/n2k/launch_s0_kernel.hpp"
 #include "../include/n2k/bad_feed_mask.hpp"
-#include "../include/n2k.hpp"  // n2k::sk_globals
+#include "../include/n2k/interpolation.hpp"
+#include "../include/n2k/sk_globals.hpp"
+#include "../include/n2k/sk_kernel.hpp"
 
 #include <gputils/cuda_utils.hpp>
 
@@ -328,77 +329,52 @@ __global__ void sk_kernel(
 }
 
 
-void launch_sk_kernel(
-    float *out_sk_feed_averaged,          // Shape (T,F,3)
-    float *out_sk_single_feed,            // Shape (T,F,3,S), can be NULL
-    uint *out_rfimask,                    // Shape (F,T*Nds/32), can be NULL
-    const uint *in_S012,                  // Shape (T,F,3,S)
-    const uint8_t *in_bf_mask,            // Length S (bad feed mask)
-    long rfimask_fstride,                 // Only used if (out_rfimask != NULL). NOTE: uint32 stride, not bit stride!
-    double sk_rfimask_sigmas,             // RFI masking threshold in "sigmas" (only used if out_rfimask != NULL)
-    double single_feed_min_good_frac,     // For single-feed SK-statistic (threshold for validity)
-    double feed_averaged_min_good_frac,   // For feed-averaged SK-statistic (threshold for validity)
-    double mu_min,                        // For single-feed SK-statistic (threshold for validity)
-    double mu_max,                        // For single-feed SK-statistic (threshold for validity)
-    long Nds,                             // Downsampling factor used to construct S012 array (before sk_kernel() was called)
-    long T,                               // Number of downsampled times in S012 array
-    long F,                               // Number of frequency channels
-    long S,                               // Number of stations (= 2 * dishes)
-    cudaStream_t stream)
+// -------------------------------------------------------------------------------------------------
+
+
+SkKernel::SkKernel(const SkKernel::Params &params_, bool check_params)
 {
-    // Check for NULL pointers.
-    
-    if (!out_sk_feed_averaged)
-	throw runtime_error("launch_sk_kernel: 'out_sk_feed_averaged' must be non-NULL");
-    if (!in_S012)
-	throw runtime_error("launch_sk_kernel: 'in_S012' must be non-NULL");
-    if (!in_bf_mask)
-	throw runtime_error("launch_sk_kernel: 'in_bf_mask' must be non-NULL");
+    constexpr int ncoeffs = (4 * sk_globals::bias_nx) + sk_globals::sigma_nx;
 
-    // Check integer arguments.
+    if (check_params)
+	check_params(params_);
     
-    if (T <= 0)
-	throw runtime_error("launch_sk_kernel: expected T > 0");
-    if (F <= 0)
-	throw runtime_error("launch_sk_kernel: expected F > 0");
-    if ((S <= 0) || (S > 8192))
-	throw runtime_error("launch_sk_kernel: expected 0 < S <= 8192");
+    this->params = params_;
+    this->bsigma_coeffs = Array<float> ({ncoeffs}, af_gpu);
+    
+    CUDA_CALL(cudaGetDevice(&this->device));
+    CUDA_CALL(cudaMemcpy(this->bsigma_coeffs.data, sk_globals::get_bsigma_coeffs(), cudaMemcpyKindDefault));
+}
+
+
+// Static member function
+void SkKernel::check_params(const SkKernel::Params &params)
+{
+    double sk_rfimask_sigmas = params.sk_rfimask_sigmas;
+    double single_feed_min_good_frac = params.single_feed_min_good_frac;
+    double feed_averaged_min_good_frac = params.feed_averaged_min_good_frac;
+    double mu_min = params.mu_min;
+    double mu_max = params.mu_max;
+    int Nds = params.Nds;
+    
     if (Nds <= 0)
-	throw runtime_error("launch_sk_kernel: expected Nds > 0");
+	throw runtime_error("SkKernel::Params::Nds was uninitialized or <= 0");
     if ((Nds % 32) != 0)
-	throw runtime_error("launch_sk_kernel: expected Nds to be a multiple of 32");
-    if (3*T*F*S >= INT_MAX)
-	throw runtime_error("launch_sk_kernel: product T*F*S is too large (32-bit overflow)");
-    
-    // This constraint comes from load_bad_feed_mask(), and could be relaxed if necessary.
-    
-    if ((S % 128) != 0)
-	throw runtime_error("launch_sk_kernel: expected S to be a multiple of 128.");
-
-    // If an RFI bitmask is being computed, check 'rfimask_fstride' and 'sk_rfimask_sigmas' arguments,.
-    
-    if (out_rfimask != NULL) {
-	if (std::abs(rfimask_fstride) < (T*(Nds/32)))
-	    throw runtime_error("launch_sk_kernel: rfimask_fstride is too small");
-	if (F * std::abs(rfimask_fstride) >= INT_MAX)
-	    throw runtime_error("launch_sk_kernel: product F*rfimask_fstride is too large (32-bit overflow)");
-	if (sk_rfimask_sigmas <= 0.0)
-	    throw runtime_error("launch_sk_kernel: expected sk_rfimask_sigmas > 0.0");
-    }
+	throw runtime_error("SkKernel::Params::Nds must be a multiple of 32");
 
     // Some trivial constraints on thresholds.
     
     if (single_feed_min_good_frac <= 0.0)
-	throw runtime_error("launch_sk_kernel: expected single_feed_min_good_frac > 0.0");
+	throw runtime_error("SkKernel::Params::single_feed_min_good_frac was uninitialized or <= 0");
     if (feed_averaged_min_good_frac <= 0.0)
-	throw runtime_error("launch_sk_kernel: expected single_feed_min_good_frac > 0.0");
+	throw runtime_error("SkKernel::Params::feed_averaged_min_good_frac was uninitialized or <= 0");
     if (mu_min <= 0.0)
-	throw runtime_error("launch_sk_kernel: expected mu_min > 0.0");
+	throw runtime_error("SkKernel::Params::mu_min was uninitialized or <= 0");
     if (mu_max >= 98.0)
-	throw runtime_error("launch_sk_kernel: expected mu_max < 98.0");
+	throw runtime_error("SkKernel::Params::mu_max was uninitialized or <= 0");
     if (mu_min >= mu_max)
-	throw runtime_error("launch_sk_kernel: expected mu_min < mu_max");
-
+	throw runtime_error("SkKernel: expected Params::mu_min < Params::mu_max");
+    
     // Some nontrivial constraints deriving from n2k::sk_globals.
     
     int n_min = n2k::sk_globals::n_min;
@@ -406,7 +382,7 @@ void launch_sk_kernel(
 
     if (Nds < n_min) {
 	stringstream ss;
-	ss << "launch_sk_kernel: Nds=" << Nds
+	ss << "SkKernel::Params::Nds=" << Nds
 	   << " was specified, and min allowed value is " << n_min
 	   << " (= n2k::sk_globals::n_min), since the SK-interpolation table has not been"
 	   << " validated for smaller S0-values. This could be improved with some effort.";
@@ -415,7 +391,7 @@ void launch_sk_kernel(
 
     if (single_feed_min_good_frac < x-0.01) {
 	stringstream ss;
-	ss << "launch_sk_kernel: single_feed_min_good_frac=" << single_feed_min_good_frac
+	ss << "SkKernel::Params::single_feed_min_good_frac=" << single_feed_min_good_frac
 	   << " was specified, and min allowed value (for Nds=" << Nds << ") is " << x
 	   << " (= n2k::sk_globals::n_min / Nds), since the SK-interpolation table has not"
 	   << " been validated for smaller S0-values. This could be improved with some effort.";
@@ -424,7 +400,7 @@ void launch_sk_kernel(
 
     if (mu_min < n2k::sk_globals::mu_min-0.01) {
 	stringstream ss;
-	ss << "launch_sk_kernel: mu_min=" << mu_min
+	ss << "SkKernel::Params::mu_min=" << mu_min
 	   << " was specified, and min allowed value is " << mu_min
 	   << " (= n2k::sk_globals::mu_min), since the SK-interpolation table has not"
 	   << " been validated for smaller mu-values. This could be improved with some effort.";
@@ -433,14 +409,76 @@ void launch_sk_kernel(
 
     if (mu_max > n2k::sk_globals::mu_max+0.01) {
 	stringstream ss;
-	ss << "launch_sk_kernel: mu_max=" << mu_max
+	ss << "SkKernel::Params::mu_max=" << mu_max
 	   << " was specified, and max allowed value is " << mu_max
 	   << " (= n2k::sk_globals::mu_max), since the SK-interpolation table has not"
 	   << " been validated for larger mu-values. This could be improved with some effort.";
 	throw runtime_error(ss.str());
     }
 
-    // Argument checking complete!
+    // We don't error-check 'params.sk_rfimask_sigmas' here (check is deferred to launch()).
+    // This is because params.sk_rfimask_sigmas is only used if 'out_rfimask' is non-NULL
+    // in launch().
+}
+
+
+void SkKernel::launch(
+    float *out_sk_feed_averaged,          // Shape (T,F,3)
+    float *out_sk_single_feed,            // Shape (T,F,3,S), can be NULL
+    uint *out_rfimask,                    // Shape (F,T*Nds/32), can be NULL
+    const uint *in_S012,                  // Shape (T,F,3,S)
+    const uint8_t *in_bf_mask,            // Length S (bad feed mask)
+    long rfimask_fstride,                 // Only used if (out_rfimask != NULL). NOTE: uint32 stride, not bit stride!
+    long T,                               // Number of downsampled times in S012 array
+    long F,                               // Number of frequency channels
+    long S,                               // Number of stations (= 2 * dishes)
+    cudaStream_t stream,
+    bool check_params)
+{
+    if (check_params)
+	SkKernel::check_params(this->params);
+
+    int dev = -2;
+    CUDA_CALL(cudaGetDevice(&dev));
+
+    if (dev != this->device)
+	throw runtime_error("SkKernel::launch: current CUDA device doesn't match current device when SkKernel constructor was called");
+    
+    // Check for NULL pointers.
+    
+    if (!out_sk_feed_averaged)
+	throw runtime_error("SkKernel::launch: 'out_sk_feed_averaged' must be non-NULL");
+    if (!in_S012)
+	throw runtime_error("SkKernel::launch: 'in_S012' must be non-NULL");
+    if (!in_bf_mask)
+	throw runtime_error("SkKernel::launch: 'in_bf_mask' must be non-NULL");
+
+    // Check integer arguments.
+    
+    if (T <= 0)
+	throw runtime_error("SkKernel::launch: expected T > 0");
+    if (F <= 0)
+	throw runtime_error("SkKernel::launch: expected F > 0");
+    if ((S <= 0) || (S > 8192))
+	throw runtime_error("SkKernel::launch: expected 0 < S <= 8192");
+    if (3*T*F*S >= INT_MAX)
+	throw runtime_error("SkKernel::launch: product T*F*S is too large (32-bit overflow)");
+    
+    // This constraint comes from load_bad_feed_mask(), and could be relaxed if necessary.
+    
+    if ((S % 128) != 0)
+	throw runtime_error("SkKernel::launch: expected S to be a multiple of 128.");
+
+    // If an RFI bitmask is being computed, check 'rfimask_fstride' and 'sk_rfimask_sigmas' arguments,.
+    
+    if (out_rfimask != NULL) {
+	if (std::abs(rfimask_fstride) < (T*(Nds/32)))
+	    throw runtime_error("SkKernel::launch: rfimask_fstride is too small");
+	if (F * std::abs(rfimask_fstride) >= INT_MAX)
+	    throw runtime_error("SkKernel::launch: product F*rfimask_fstride is too large (32-bit overflow)");
+	if (params.sk_rfimask_sigmas <= 0.0)
+	    throw runtime_error("SkKernel::launch: expected sk_rfimask_sigmas > 0.0");
+    }
 
     // Assign blockDims.
     // Not much thought put into this!
@@ -478,47 +516,44 @@ void launch_sk_kernel(
     Array<uint> &out_rfimask,             // Either empty array or shape (F,T*Nds/32), need not be contiguous
     const Array<uint> &in_S012,           // Shape (T,F,3,S)
     const Array<uint8_t> &in_bf_mask,     // Length S (bad feed bask)
-    double sk_rfimask_sigmas,             // RFI masking threshold in "sigmas" (only used if out_rfimask != NULL)
-    double single_feed_min_good_frac,     // For single-feed SK-statistic (threshold for validity)
-    double feed_averaged_min_good_frac,   // For feed-averaged SK-statistic (threshold for validity)
-    double mu_min,                        // For single-feed SK-statistic (threshold for validity)
-    double mu_max,                        // For single-feed SK-statistic (threshold for validity)
-    long Nds,                             // Downsampling factor used to construct S012 array (before sk_kernel() was called)
     cudaStream_t stream)
 {
+    check_params(this->params);
+    int Nds = this->params.Nds;
+    
     // Check 'out_sk_feed_averaged', 'in_S012', 'in_bf_mask' args.
     
     if (out_sk_feed_averaged.ndim != 3)
-	throw runtime_error("launch_sk_kernel: expected out_sk_feed_averaged.ndim == 3");
+	throw runtime_error("SkKernel::launch: expected out_sk_feed_averaged.ndim == 3");
     if (!out_sk_feed_averaged.is_fully_contiguous())
-	throw runtime_error("launch_sk_kernel: expected 'out_sk_feed_averaged' to be fully contiguous");
+	throw runtime_error("SkKernel::launch: expected 'out_sk_feed_averaged' to be fully contiguous");
     if (!out_sk_feed_averaged.on_gpu())
-	throw runtime_error("launch_sk_kernel: expected 'out_sk_feed_averaged' to be in GPU memory");
+	throw runtime_error("SkKernel::launch: expected 'out_sk_feed_averaged' to be in GPU memory");
     
     if (in_S012.ndim != 4)
-	throw runtime_error("launch_sk_kernel: expected in_S012.ndim == 4");
+	throw runtime_error("SkKernel::launch: expected in_S012.ndim == 4");
     if (!in_S012.is_fully_contiguous())
-	throw runtime_error("launch_sk_kernel: expected 'in_S012' to be fully contiguous");
+	throw runtime_error("SkKernel::launch: expected 'in_S012' to be fully contiguous");
     if (!in_S012.on_gpu())
-	throw runtime_error("launch_sk_kernel: expected 'out_sk_feed_averaged' to be in GPU memory");
+	throw runtime_error("SkKernel::launch: expected 'out_sk_feed_averaged' to be in GPU memory");
     
     if (in_bf_mask.ndim != 1)
-	throw runtime_error("launch_sk_kernel: expected in_bf_mask.ndim == 1");    
+	throw runtime_error("SkKernel::launch: expected in_bf_mask.ndim == 1");    
     if (!in_bf_mask.is_fully_contiguous())
-	throw runtime_error("launch_sk_kernel: expected 'in_bf_mask' to be fully contiguous");
+	throw runtime_error("SkKernel::launch: expected 'in_bf_mask' to be fully contiguous");
     if (!in_bf_mask.on_gpu())
-	throw runtime_error("launch_sk_kernel: expected 'out_sk_feed_averaged' to be in GPU memory");
+	throw runtime_error("SkKernel::launch: expected 'out_sk_feed_averaged' to be in GPU memory");
     
     if (out_sk_feed_averaged.shape[0] != in_S012.shape[0])
-	throw runtime_error("launch_sk_kernel: inconsistent value of T between 'out_sk_feed_averaged' and 'in_S012' arrays");
+	throw runtime_error("SkKernel::launch: inconsistent value of T between 'out_sk_feed_averaged' and 'in_S012' arrays");
     if (out_sk_feed_averaged.shape[1] != in_S012.shape[1])
-	throw runtime_error("launch_sk_kernel: inconsistent value of F between 'out_sk_feed_averaged' and 'in_S012' arrays");
+	throw runtime_error("SkKernel::launch: inconsistent value of F between 'out_sk_feed_averaged' and 'in_S012' arrays");
     if (in_S012.shape[3] != in_bf_mask.shape[0])
-	throw runtime_error("launch_sk_kernel: inconsistent value of S between 'in_S012' and 'in_bf_mask' arrays");
+	throw runtime_error("SkKernel::launch: inconsistent value of S between 'in_S012' and 'in_bf_mask' arrays");
     if (out_sk_feed_averaged.shape[2] != 3)
-	throw runtime_error("launch_sk_kernel: expected out_sk_feed_averaged.shape == (T,F,3)");
+	throw runtime_error("SkKernel::launch: expected out_sk_feed_averaged.shape == (T,F,3)");
     if (in_S012.shape[2] != 3)
-	throw runtime_error("launch_sk_kernel: expected out_sk_feed_averaged.shape == (T,F,3)");
+	throw runtime_error("SkKernel::launch: expected out_sk_feed_averaged.shape == (T,F,3)");
     
     long T = in_S012.shape[0];
     long F = in_S012.shape[1];
@@ -529,34 +564,30 @@ void launch_sk_kernel(
 
     if (out_sk_single_feed.data != NULL) {
 	if (!out_sk_single_feed.shape_equals({T,F,3,S}))
-	    throw runtime_error("launch_sk_kernel: 'out_sk_single_feed' array has wrong shape (expected {T,F,3,S}");
+	    throw runtime_error("SkKernel::launch: 'out_sk_single_feed' array has wrong shape (expected {T,F,3,S}");
 	if (!out_sk_single_feed.is_fully_contiguous())
-	    throw runtime_error("launch_sk_kernel: expected 'out_sk_single_feed' array to be fully contiguous");
+	    throw runtime_error("SkKernel::launch: expected 'out_sk_single_feed' array to be fully contiguous");
 	if (!out_sk_single_feed.on_gpu())
-	    throw runtime_error("launch_sk_kernel: expected 'out_sk_single_feed' to be in GPU memory");
+	    throw runtime_error("SkKernel::launch: expected 'out_sk_single_feed' to be in GPU memory");
     }
 
     if (out_rfimask.data != NULL) {
 	if (!out_rfimask.shape_equals({F,(T*Nds)/32}))
-	    throw runtime_error("launch_sk_kernel: 'out_rfimask' array has wrong shape (expected {F,(T*Nds)/32})");
+	    throw runtime_error("SkKernel::launch: 'out_rfimask' array has wrong shape (expected {F,(T*Nds)/32})");
 	if (out_rfimask.strides[1] != 1)
-	    throw runtime_error("launch_sk_kernel: expected inner (time) axis of 'out_rfimask' array to be contiguous");
+	    throw runtime_error("SkKernel::launch: expected inner (time) axis of 'out_rfimask' array to be contiguous");
 	if (!out_rfimask.on_gpu())
-	    throw runtime_error("launch_sk_kernel: expected 'out_rfimask' to be in GPU memory");
+	    throw runtime_error("SkKernel::launch: expected 'out_rfimask' to be in GPU memory");
     }
     
-    launch_sk_kernel(
+    this->launch(
         out_sk_feed_averaged.data,
 	out_sk_single_feed.data,
 	out_rfimask.data,
 	in_S012.data,
 	in_bf_mask.data,
 	rfimask_fstride,
-	sk_rfimask_sigmas,
-	single_feed_min_good_frac,
-	feed_averaged_min_good_frac,
-	mu_min, mu_max,
-	Nds, T, F, S,
+	T, F, S,
 	stream);
 }
 		      
