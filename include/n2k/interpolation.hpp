@@ -9,6 +9,8 @@ namespace n2k {
 #endif
 
 
+// load_sigma_coeffs(sigma_coeffs, i, c0, c1, c2 ,c3)
+//
 // 'sigma_coeffs' points to an array of shape (N,8).
 // The length-8 axis is a spectator, i.e. all 8 values are equal.
 //
@@ -25,61 +27,61 @@ namespace n2k {
 template<bool Debug = false>
 __device__ inline void load_sigma_coeffs(const float *sigma_coeffs, int i, float &c0, float &c1, float &c2, float &c3)
 {
-#if 0
-    sigma_coeffs += (threadIdx.x & 7);
-    c0 = sigma_coeffs[8*i];
-    c1 = sigma_coeffs[8*i+8];
-    c2 = sigma_coeffs[8*i+16];
-    c3 = sigma_coeffs[8*i+24];
-#elif 0
-    sigma_coeffs += (threadIdx.x & 7);
-    c0 = sigma_coeffs[8 * ((i+3) & ~3)];
-    c1 = sigma_coeffs[8 * (((i+2) & ~3) + 1)];
-    c2 = sigma_coeffs[8 * (((i+1) & ~3) + 2)];
-    c3 = sigma_coeffs[8 * (((i) & ~3) + 3)];
-    roll_forward(i, c0, c1, c2, c3);
-#elif 0
-     int s = (threadIdx.x >> 3) & 3;
-     sigma_coeffs += (threadIdx.x & 7);
-     c0 = sigma_coeffs[8 * (((i+s+3) & ~3) - s)];
-     c1 = sigma_coeffs[8 * (((i+s+2) & ~3) + 1-s)];
-     c2 = sigma_coeffs[8 * (((i+s+1) & ~3) + 2-s)];
-     c3 = sigma_coeffs[8 * (((i+s) & ~3) + 3-s)];
-     roll_forward(i+s, c0, c1, c2, c3);
-#elif 0
-     int s = (threadIdx.x >> 3) & 3;
-     sigma_coeffs += (threadIdx.x & 7);
-     c0 = bank_conflict_free_load<Debug> (sigma_coeffs + 8 * (((i+s+3) & ~3) - s));
-     c1 = bank_conflict_free_load<Debug> (sigma_coeffs + 8 * (((i+s+2) & ~3) + 1-s));
-     c2 = bank_conflict_free_load<Debug> (sigma_coeffs + 8 * (((i+s+1) & ~3) + 2-s));
-     c3 = bank_conflict_free_load<Debug> (sigma_coeffs + 8 * (((i+s) & ~3) + 3-s));
-     roll_forward(i+s, c0, c1, c2, c3);
-#elif 0
-     int u = (threadIdx.x & 0x18);  // 8*s
-     sigma_coeffs += (threadIdx.x & 7);
-     c0 = bank_conflict_free_load<Debug> (sigma_coeffs + ((8*i+u+24) & ~31) - u);
-     c1 = bank_conflict_free_load<Debug> (sigma_coeffs + ((8*i+u+16) & ~31) + 8-u);
-     c2 = bank_conflict_free_load<Debug> (sigma_coeffs + ((8*i+u+8) & ~31) + 16-u);
-     c3 = bank_conflict_free_load<Debug> (sigma_coeffs + ((8*i+u) & ~31) + 24-u);
-     roll_forward(i+s, c0, c1, c2, c3);
-#elif 0
-     int l = (threadIdx.x & 31);
-     c0 = bank_conflict_free_load<Debug> (sigma_coeffs + ((8*i+l+24) & ~31) + 7-l);
-     c1 = bank_conflict_free_load<Debug> (sigma_coeffs + ((8*i+l+16) & ~31) + 15-l);
-     c2 = bank_conflict_free_load<Debug> (sigma_coeffs + ((8*i+l+8) & ~31) + 23-l);
-     c3 = bank_conflict_free_load<Debug> (sigma_coeffs + ((8*i+l) & ~31) + 31-l);
-     roll_forward(i + (threadIdx.x >> 3), c0, c1, c2, c3);
-#else
     int t = threadIdx.x;
     c0 = bank_conflict_free_load<Debug> (sigma_coeffs + ((8*i + t + 24) & ~31) - t + 7);
     c1 = bank_conflict_free_load<Debug> (sigma_coeffs + ((8*i + t + 16) & ~31) - t + 15);
     c2 = bank_conflict_free_load<Debug> (sigma_coeffs + ((8*i + t + 8) & ~31) - t + 23);
     c3 = bank_conflict_free_load<Debug> (sigma_coeffs + ((8*i + t ) & ~31) - t + 31);
     roll_forward(i + (t >> 3), c0, c1, c2, c3);
-#endif
 }
 
 
+
+// load_bias_coeffs(bias_coeffs, i, y, c0, c1, c2 ,c3)
+//
+// 'bias_coeffs' points to an array of shape (N,4,2).
+// The length-2 axis is a spectator, i.e. all 2 values are equal.
+//
+// This function is equivalent to:
+//   c0 = sum(bias_coeffs[8*i+2*j] * y^j for j in [0,1,2,3]);
+//   c1 = sum(bias_coeffs[8*i+2*j+8] * y^j for j in [0,1,2,3]);
+//   c2 = sum(bias_coeffs[8*i+2*j+16] * y^j for j in [0,1,2,3]);
+//   c3 = sum(bias_coeffs[8*i+2*j+24] * y^j for j in [0,1,2,3]);
+//
+// but is guaranteed bank conflict free. This function is tested in
+// src_bin/test-helper-functions.cu.
+
+
+template<bool Debug = false>
+__device__ inline float load_bias_inner(const float *coeffs, float y0, float y1, float y2, float y3)
+{
+    int t = threadIdx.x;
+    float c0 = bank_conflict_free_load<Debug> (coeffs + ((t+6) & ~7) + 1-t);
+    float c1 = bank_conflict_free_load<Debug> (coeffs + ((t+4) & ~7) + 3-t);
+    float c2 = bank_conflict_free_load<Debug> (coeffs + ((t+2) & ~7) + 5-t);
+    float c3 = bank_conflict_free_load<Debug> (coeffs + (t & ~7) + 7-t);
+    return c0*y0 + c1*y1 + c2*y2 + c3*y3;
+}
+
+
+template<bool Debug = false>
+__device__ inline void load_bias_coeffs(const float *bias_coeffs, int i, float y, float &c0, float &c1, float &c2, float &c3)
+{
+    float y0 = 1.0f;
+    float y1 = y;
+    float y2 = y*y;
+    float y3 = y2*y;
+    roll_backward(threadIdx.x >> 1, y0, y1, y2, y3);
+
+    int s = (threadIdx.x >> 3) & 3;
+    c0 = load_bias_inner<Debug> (bias_coeffs + 8 * (((i+s+3) & ~3) - s), y0, y1, y2, y3);
+    c1 = load_bias_inner<Debug> (bias_coeffs + 8 * (((i+s+2) & ~3) + 1-s), y0, y1, y2, y3);
+    c2 = load_bias_inner<Debug> (bias_coeffs + 8 * (((i+s+1) & ~3) + 2-s), y0, y1, y2, y3);
+    c3 = load_bias_inner<Debug> (bias_coeffs + 8 * (((i+s) & ~3) + 3-s), y0, y1, y2, y3);
+    roll_forward(i+s, c0, c1, c2, c3);
+}
+
+    
 }  // namespace n2k
 
 #endif // _N2K_INTERPOLATION_HPP

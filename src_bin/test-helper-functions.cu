@@ -256,6 +256,75 @@ static void test_load_sigma_coeffs()
 
 
 // -------------------------------------------------------------------------------------------------
+//
+// Test load_bias_coeffs() in interpolation.hpp
+
+
+// Launch with 1 block and T threads.
+//  out: shape (T,4)
+//  bias_coeffs: shape (N,4,2)
+//  ix: shape (T,)
+//  y: shape (T,)
+
+__global__ void bias_coeffs_test_kernel(float *out, const float *bias_coeffs, const int *ix, const float *y)
+{
+    int t = threadIdx.x;
+    load_bias_coeffs<true> (bias_coeffs, ix[t], y[t], out[4*t], out[4*t+1], out[4*t+2], out[4*t+3]);   // Debug=true
+}
+
+
+static void test_load_bias_coeffs(int T, int N)
+{
+    cout << "test_load_bias_coeffs(T=" << T << ", N=" << N << ")" << endl;
+    
+    Array<float> out({T,4}, af_uhost);
+    Array<float> coeffs({N,4,2}, af_rhost);
+    Array<int> ix({T}, af_rhost);
+    Array<float> yy({T}, af_rhost);
+
+    for (int i = 0; i < N; i++)
+	for (int j = 0; j < 4; j++)
+	    coeffs.at({i,j,0}) = coeffs.at({i,j,1}) = rand_uniform();
+    
+    for (int t = 0; t < T; t++) {
+	int i = rand_int(0, N-3);
+	float y = rand_uniform();
+	ix.at({t}) = i;
+	yy.at({t}) = y;
+	
+	for (int j = 0; j < 4; j++) {
+	    float c0 = coeffs.at({i+j,0,0});
+	    float c1 = coeffs.at({i+j,1,0});
+	    float c2 = coeffs.at({i+j,2,0});
+	    float c3 = coeffs.at({i+j,3,0});
+	    out.at({t,j}) = c0 + c1*y + c2*y*y + c3*y*y*y;
+	}
+    }
+
+    Array<float> out_gpu({T,4}, af_gpu | af_zero);
+    Array<float> coeffs_gpu = coeffs.to_gpu();
+    Array<int> ix_gpu = ix.to_gpu();
+    Array<float> yy_gpu = yy.to_gpu();
+
+    bias_coeffs_test_kernel<<<1,T>>> (out_gpu.data, coeffs_gpu.data, ix_gpu.data, yy_gpu.data);
+    CUDA_PEEK("bias_coeffs_test_kernel");
+    CUDA_CALL(cudaDeviceSynchronize());
+
+    assert_arrays_equal(out, out_gpu, "cpu", "gpu", {"t","j"});
+}
+
+
+static void test_load_bias_coeffs()
+{
+    for (int i = 0; i < 10; i++) {
+	int T = 32 * rand_int(1,10);
+	int N = rand_int(10, 100);
+	test_load_bias_coeffs(T, N);
+    }
+}
+
+
+// -------------------------------------------------------------------------------------------------
 
 
 int main(int argc, char **argv)
@@ -264,5 +333,6 @@ int main(int argc, char **argv)
     test_transpose_bit_with_lane();
     test_bad_feed_mask();
     test_load_sigma_coeffs();
+    test_load_bias_coeffs();
     return 0;
 }
