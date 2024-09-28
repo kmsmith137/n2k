@@ -104,6 +104,88 @@ __device__ inline void load_bias_coeffs(const float *bias_coeffs, int i, float y
     roll_forward(i+s, c0, c1, c2, c3);
 }
 
+
+// unpack_bias_sigma_coeffs(): copies b/sigma coeffs from global -> shared memory.
+//
+// The 'gp' pointer should point to global GPU memory, laid out as follows:
+//
+//   float gmem_bias_coeffs[bias_nx][4];
+//   float gmem_sigma_coeffs[sigma_nx];
+//
+// The 'sp' pointer should point to shared memory, laid out as follows:
+//
+//   float shmem_bias_coeffs[bias_nx][4][2];
+//   float shmem_sigma_coeffs[sigma_nx][8];
+//   float shmem_tmp_coeffs[4*bias_nx + sigma_nx];
+//
+// If (bias_nx,sigma_nx) = (128,64), then gmem/shmem footprint is 8.25/2.25 KiB.
+
+
+__device__ void unpack_bias_sigma_coeffs(const float *gp, float *sp)
+{
+    constexpr int nsh1 = (8 * sk_globals::bias_nx);
+    constexpr int nsh = (8 * sk_globals::sigma_nx) + nsh1;
+    constexpr int nglo = (4 * sk_globals::bias_nx) + sk_globals::sigma_nx;
+    
+    int nblocks = blockDim.z * blockDim.y * blockDim.x;
+    int threadId = (threadIdx.z * blockDim.y) + threadIdx.y;
+    threadId = (threadId * blockDim.x) + threadIdx.x;
+    
+    // Copy global memory (bsigma_coeffs) to shared memory (shmem_tmp_coeffs)
+    for (int i = threadId; i < nglo; i += nthreads)
+	sp[i+nsh] = gp[i];
+
+    __syncthreads();
+
+    // "Unpack" (shmem_tmp_coeffs) -> (shmem_bias_coeffs, shmem_sigma_coeffs)
+    for (int i = threadId; i < nsh; i += nthreads) {
+	int ilo = (i < nsh1) ? i : nsh1;
+	int j = (ilo >> 1) + ((i-ilo) >> 3);
+	sp[i] = sp[j+nsh];
+    }
+    
+    __syncthreads();
+}
+
+
+__device__ inline float interpolate_bias(const float *shmem_bsigma_coeffs, float x, float y)
+{
+    constexpr int nx = sk_globals::bias_nx;   // note bias_nx (not sigma_nx) here
+    constexpr float xmin = sk_globals::xmin;
+    constexpr float xmax = sk_globals::xmax;
+    constexpr float xscal = (xmax-xmin) / float(nx-1);
+
+    x = xscal * (x - sk_globals::xmin);
+    int ix = int(x);
+    ix = (ix >= 1) ? ix : 1;
+    ix = (ix <= nx-3) ? ix : (nx-3);
+
+    float c0, c1, c2, c3;
+    load_bias_coeffs(shmem_bsigma_coeffs, ix-1, y, c0, c1, c2, c3);   // note (ix-1) here
+    
+    return cubic_interpolate<float> (x-ix, c0, c1, c2, c3);   // note (x-ix) here
+}
+
+
+__device__ inline float interpolate_sigma(const float *shmem_bsigma_coeffs, float x)
+{
+    constexpr int nx = sk_globals::sigma_nx;   // note sigma_nx (not bias_nx) here
+    constexpr float xmin = sk_globals::xmin;
+    constexpr float xmax = sk_globals::xmax;
+    constexpr float xscal = (xmax-xmin) / float(nx-1);
+    constexpr int nb = 8 * sk_globals::bias_nx;
+
+    x = xscal * (x - sk_globals::xmin);
+    int ix = int(x);
+    ix = (ix >= 1) ? ix : 1;
+    ix = (ix <= nx-3) ? ix : (nx-3);
+
+    float c0, c1, c2, c3;
+    load_sigma_coeffs(shmem_bsigma_coeffs + nb, ix-1, c0, c1, c2, c3);     // note (ix-1) and (... + nb) here.
+    
+    return cubic_interpolate<float> (x-ix, c0, c1, c2, c3);   // note (x-ix) here
+}
+
     
 }  // namespace n2k
 
