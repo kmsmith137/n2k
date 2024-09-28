@@ -1,6 +1,8 @@
 #ifndef _N2K_SK_KERNEL_HPP
 #define _N2K_SK_KERNEL_HPP
 
+#include <gputils/Array.hpp>
+
 namespace n2k {
 #if 0
 }  // editor
@@ -58,7 +60,7 @@ struct SkKernel
     // gputils::Array<> interface to launch().
     // Launches asynchronosly (i.e. does not synchronize stream or device after launching kernel.)
 
-    extern void launch(
+    void launch(
         gputils::Array<float> &out_sk_feed_averaged,   // Shape (T,F,3)
 	gputils::Array<float> &out_sk_single_feed,     // Either empty array or shape (T,F,3,S)
 	gputils::Array<uint> &out_rfimask,             // Either empty array or shape (F,T*Nds/32), need not be contiguous

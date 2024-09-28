@@ -2,6 +2,7 @@
 #define _N2K_INTERPOLATION_HPP
 
 #include "device_inlines.hpp"  // bank_conflict_free_load(), roll_forward(), roll_backward()
+#include "sk_globals.hpp"
 
 namespace n2k {
 #if 0
@@ -127,7 +128,7 @@ __device__ void unpack_bias_sigma_coeffs(const float *gp, float *sp)
     constexpr int nsh = (8 * sk_globals::sigma_nx) + nsh1;
     constexpr int nglo = (4 * sk_globals::bias_nx) + sk_globals::sigma_nx;
     
-    int nblocks = blockDim.z * blockDim.y * blockDim.x;
+    int nthreads = blockDim.z * blockDim.y * blockDim.x;
     int threadId = (threadIdx.z * blockDim.y) + threadIdx.y;
     threadId = (threadId * blockDim.x) + threadIdx.x;
     

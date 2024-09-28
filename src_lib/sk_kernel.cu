@@ -1,7 +1,8 @@
+#include "../include/n2k/SkKernel.hpp"
+
 #include "../include/n2k/bad_feed_mask.hpp"
 #include "../include/n2k/interpolation.hpp"
 #include "../include/n2k/sk_globals.hpp"
-#include "../include/n2k/sk_kernel.hpp"
 
 #include <gputils/cuda_utils.hpp>
 
@@ -92,7 +93,7 @@ __global__ void sk_kernel(
     int T,                               // Number of time samples in S012 array (after downsampling by Tds)
     int F,                               // Number of frequency channels
     int S)                               // Number of stations (= 2*dishes)
-{    
+{
     // Parallelization.
     const uint Wt = blockDim.z;
     const uint Wf = blockDim.y;
@@ -100,8 +101,6 @@ __global__ void sk_kernel(
     
     const uint warpId = (threadIdx.z * Wf * Ws) + (threadIdx.y * Ws) + (threadIdx.x >> 5);
     const uint laneId = (threadIdx.x & 31);
-    const int threadId = 32*warpId + laneId;
-    const int nthreads = 32 * Wt * Wf * Ws;
     
     // Shared memory layout.
     extern __shared__ uint shmem_base[];
@@ -113,7 +112,8 @@ __global__ void sk_kernel(
     float *shmem_bsigma_coeffs = (float *) (shmem_rfi + 32);
 
     // Copy interpolation coeffs from GPU global -> shared memory.
-    // Note: unpack_bias_sigma_coeffs() is defined in include/n2k/interpolation.hpp and calls __syncthreads().
+    // Note: unpack_bias_sigma_coeffs() is defined in include/n2k/interpolation.hpp
+    // Note: unpack_bias_sigma_coeffs() calls __syncthreads().
     unpack_bias_sigma_coeffs(gmem_bsigma_coeffs, shmem_bsigma_coeffs);
     
     // Part 1:
@@ -160,21 +160,26 @@ __global__ void sk_kernel(
 
 	S0 = sf_valid ? S0 : 2.0f;    // If invalid, set to 2.0 to avoid dividing by zero below
 	S1 = sf_valid ? S1 : 1.0f;    // If invalid, set to 1.0 to avoid dividing by zero below
-	float rec_S0 = 1.0f / S0;
-	float mu = S1 * rec_S0;       // Always > 0 (even if invalid)
 
 	// Interpolation uses variables (x,y).
-	float x = logf(mu);       // Note: mu > 0 (even if !sf_valid)
 	float y = 1.0f / S0;      // Note: S0 > 0 (even if !sf_valid)
+	float mu = S1 * y;        // Always > 0 (even if !sf_valid)
+	float x = logf(mu);       // Note: mu > 0 (even if !sf_valid)
+
+	// Clip x
+	constexpr float xmin = sk_globals::xmin;
+	constexpr float xmax = sk_globals::xmax;
+	x = (x >= xmin) ? x : xmin;
+	x = (x <= xmax) ? x : xmax;
 	
 	// Single-feed (SK, b, sigma).
 	// Note: interpolate_bias() and interpolate_sigma() are defined in interpolation.hpp
 	// FIXME consider making computation of 'sk' more numerically stable.
 	
 	float b = interpolate_bias(shmem_bsigma_coeffs, x, y);
-	float sigma = interpolate_sigma(shmem_bsigma_coeffs, x, y);
+	float sigma = interpolate_sigma(shmem_bsigma_coeffs, x) * sqrtf(y);  // note sqrt(y) = N^(-1/2) here
 	float sk = (S0+1)/(S0-1) * (S0*S2/(S1*S1) - 1) - b;
-	float sigma2 = rec_S0 * sigma * sigma;   // note factor rec_S0 = (1/N) here.
+	float sigma2 = sigma * sigma;
 
 	// Write single-feed SK statistics (sk,b,sigma) to 'out_sk_single_feed'.
 	// Note: invalid entry is reprsented by (sk,b,sigma) = (0,0,-1).
@@ -360,25 +365,24 @@ SkKernel::SkKernel(const SkKernel::Params &params_, bool check_params)
     constexpr int ncoeffs = (4 * sk_globals::bias_nx) + sk_globals::sigma_nx;
 
     if (check_params)
-	check_params(params_);
+	SkKernel::check_params(params_);
     
     this->params = params_;
     this->bsigma_coeffs = Array<float> ({ncoeffs}, af_gpu);
     
     CUDA_CALL(cudaGetDevice(&this->device));
-    CUDA_CALL(cudaMemcpy(this->bsigma_coeffs.data, sk_globals::get_bsigma_coeffs(), cudaMemcpyKindDefault));
+    CUDA_CALL(cudaMemcpy(this->bsigma_coeffs.data, sk_globals::get_bsigma_coeffs(), ncoeffs * sizeof(float), cudaMemcpyDefault));
 }
 
 
 // Static member function
 void SkKernel::check_params(const SkKernel::Params &params)
 {
-    double sk_rfimask_sigmas = params.sk_rfimask_sigmas;
     double single_feed_min_good_frac = params.single_feed_min_good_frac;
     double feed_averaged_min_good_frac = params.feed_averaged_min_good_frac;
     double mu_min = params.mu_min;
     double mu_max = params.mu_max;
-    int Nds = params.Nds;
+    long Nds = params.Nds;
     
     if (Nds <= 0)
 	throw runtime_error("SkKernel::Params::Nds was uninitialized or <= 0");
@@ -400,14 +404,14 @@ void SkKernel::check_params(const SkKernel::Params &params)
     
     // Some nontrivial constraints deriving from n2k::sk_globals.
     
-    int n_min = n2k::sk_globals::n_min;
-    double x = double(n_min) / double(Nds);
+    constexpr int bias_nmin = n2k::sk_globals::bias_nmin;
+    double x = double(bias_nmin) / double(Nds);
 
-    if (Nds < n_min) {
+    if (Nds < bias_nmin) {
 	stringstream ss;
 	ss << "SkKernel::Params::Nds=" << Nds
-	   << " was specified, and min allowed value is " << n_min
-	   << " (= n2k::sk_globals::n_min), since the SK-interpolation table has not been"
+	   << " was specified, and min allowed value is " << bias_nmin
+	   << " (= n2k::sk_globals::bias_nmin), since the SK-interpolation table has not been"
 	   << " validated for smaller S0-values. This could be improved with some effort.";
 	throw runtime_error(ss.str());
     }
@@ -416,7 +420,7 @@ void SkKernel::check_params(const SkKernel::Params &params)
 	stringstream ss;
 	ss << "SkKernel::Params::single_feed_min_good_frac=" << single_feed_min_good_frac
 	   << " was specified, and min allowed value (for Nds=" << Nds << ") is " << x
-	   << " (= n2k::sk_globals::n_min / Nds), since the SK-interpolation table has not"
+	   << " (= n2k::sk_globals::bias_nmin / Nds), since the SK-interpolation table has not"
 	   << " been validated for smaller S0-values. This could be improved with some effort.";
 	throw runtime_error(ss.str());
     }
@@ -456,7 +460,7 @@ void SkKernel::launch(
     long F,                               // Number of frequency channels
     long S,                               // Number of stations (= 2 * dishes)
     cudaStream_t stream,
-    bool check_params)
+    bool check_params) const
 {
     if (check_params)
 	SkKernel::check_params(this->params);
@@ -495,7 +499,7 @@ void SkKernel::launch(
     // If an RFI bitmask is being computed, check 'rfimask_fstride' and 'sk_rfimask_sigmas' arguments,.
     
     if (out_rfimask != NULL) {
-	if (std::abs(rfimask_fstride) < (T*(Nds/32)))
+	if (std::abs(rfimask_fstride) < ((T * params.Nds) / 32))
 	    throw runtime_error("SkKernel::launch: rfimask_fstride is too small");
 	if (F * std::abs(rfimask_fstride) >= INT_MAX)
 	    throw runtime_error("SkKernel::launch: product F*rfimask_fstride is too large (32-bit overflow)");
@@ -513,7 +517,11 @@ void SkKernel::launch(
     // Assign gridDims.
     uint Bt = (T+Wt-1) / Wt;
     uint Bf = (F+Wf-1) / Wf;
-    uint shmem_nbytes = 4*max(S/32,32L) + 16*Wt*Wf*Ws + 128;
+
+    // Shared memory size.
+    constexpr int bnx = sk_globals::bias_nx;
+    constexpr int snx = sk_globals::sigma_nx;
+    uint shmem_nbytes = 4*max(S/32,32L) + 16*Wt*Wf*Ws + 128 + 12*bnx + 9*snx;
 
     // Launch kernel!
     sk_kernel<<< {1,Bf,Bt}, {32*Ws,Wf,Wt}, shmem_nbytes, stream >>>
@@ -522,24 +530,27 @@ void SkKernel::launch(
 	 out_rfimask,
 	 in_S012,
 	 (const uint *) in_bf_mask,    // (const uint8_t *) -> (const uint *)
+	 this->bsigma_coeffs.data,
 	 rfimask_fstride,
-	 sk_rfimask_sigmas,            // double -> float
-	 single_feed_min_good_frac,    // double -> float
-	 feed_averaged_min_good_frac,  // double -> float
-	 mu_min, mu_max,               // double -> float
-	 Nds, T, F, S);                // long -> int
+	 params.sk_rfimask_sigmas,            // double -> float
+	 params.single_feed_min_good_frac,    // double -> float
+	 params.feed_averaged_min_good_frac,  // double -> float
+	 params.mu_min,                       // double -> float
+	 params.mu_max,                       // double -> float
+	 params.Nds,                          // long -> int
+	 T, F, S);                            // long -> int
 
     CUDA_PEEK("sk_kernel");
 }
 
 
-void launch_sk_kernel(
+void SkKernel::launch(
     Array<float> &out_sk_feed_averaged,   // Shape (T,F,3)
     Array<float> &out_sk_single_feed,     // Either empty array or shape (T,F,3,S)
     Array<uint> &out_rfimask,             // Either empty array or shape (F,T*Nds/32), need not be contiguous
     const Array<uint> &in_S012,           // Shape (T,F,3,S)
     const Array<uint8_t> &in_bf_mask,     // Length S (bad feed bask)
-    cudaStream_t stream)
+    cudaStream_t stream) const
 {
     check_params(this->params);
     int Nds = this->params.Nds;
@@ -611,7 +622,8 @@ void launch_sk_kernel(
 	in_bf_mask.data,
 	rfimask_fstride,
 	T, F, S,
-	stream);
+	stream,
+	false);   // check_params
 }
 		      
 
