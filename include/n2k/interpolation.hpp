@@ -9,6 +9,29 @@ namespace n2k {
 #endif
 
 
+// t = (-1,0,1,2) returns (y0,y1,y2,y3) respectively.
+// This function is tested in src_bin/test-helper-functions.cu.
+
+template<typename T>
+__host__ __device__ inline T cubic_interpolate(T t, T y0, T y1, T y2, T y3)
+{
+    constexpr T one_half = T(1) / T(2);
+    constexpr T one_third = T(1) / T(3);
+    
+    T d01 = (t) * (y1 - y0);
+    T d12 = (t-1) * (y2 - y1);
+
+    T c12 = (t) * (y2 - y1);
+    T c23 = (t-1) * (y3 - y2);
+    
+    T d012 = one_half * (t-1) * (c12 - d01);
+    T c123 = one_half * (t) * (c23 - d12);
+    
+    T c0123 = one_third * (t+1) * (c123 - d012);
+    return c0123 + d012 + c12 + y1;
+}
+
+
 // load_sigma_coeffs(sigma_coeffs, i, c0, c1, c2 ,c3)
 //
 // 'sigma_coeffs' points to an array of shape (N,8).

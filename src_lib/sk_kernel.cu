@@ -146,6 +146,7 @@ __global__ void sk_kernel(
 	S1 = sf_valid ? S1 : 1.0f;    // If invalid, set to 1.0 to avoid dividing by zero in SK.
 
 	// Single-feed (SK, b, sigma).
+	// FIXME consider making computation of 'sk' more numerically stable.
 	float b = 0.001f * mu;        // FIXME placeholder for testing
 	float sk = (S0+1)/(S0-1) * (S0*S2/(S1*S1) - 1) - b;
 	float sigma2 = 4.0f/S0;      // FIXME placeholder for testing
