@@ -9,6 +9,15 @@ namespace n2k {
 }  // editor auto-indent
 #endif
 
+// This file contains inline functions (mostly __device__ inline) used for interpolating
+// SK bias and variance.
+//
+// If you're looking for a CPU function to interpolate SK bias/sigma, see
+// interpolate_sk_{bias,sigma} declared in SkKernel.hpp and defined in SkKernel.cu.
+//
+// If you're looking for launchable GPU kernels, see 'struct SkKernel' (declared in
+// SkKernel.hpp) or some of the test kernels in src_bin/test-helper-functions.cu.
+
 
 // t = (-1,0,1,2) returns (y0,y1,y2,y3) respectively.
 // This function is tested in src_bin/test-helper-functions.cu.
@@ -112,12 +121,14 @@ __device__ inline void load_bias_coeffs(const float *bias_coeffs, int i, float y
 //
 //   float gmem_bias_coeffs[bias_nx][4];
 //   float gmem_sigma_coeffs[sigma_nx];
+//   // Total size: (4*bias_nx + sigma_nx) * sizeof(float)
 //
 // The 'sp' pointer should point to shared memory, laid out as follows:
 //
 //   float shmem_bias_coeffs[bias_nx][4][2];
 //   float shmem_sigma_coeffs[sigma_nx][8];
 //   float shmem_tmp_coeffs[4*bias_nx + sigma_nx];
+//   // Total size: (12*bias_nx + 9*sigma_nx) * sizeof(float)
 //
 // If (bias_nx,sigma_nx) = (128,64), then gmem/shmem footprint is 8.25/2.25 KiB.
 

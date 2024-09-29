@@ -1,5 +1,5 @@
-#include "../include/n2k/launch_s0_kernel.hpp"
 #include "../include/n2k/internals.hpp"
+#include "../include/n2k/SkKernel.hpp"
 
 #include <gputils/cuda_utils.hpp>
 #include <gputils/rand_utils.hpp>
@@ -276,19 +276,25 @@ static void test_sk_kernel(const TestInstance &ti, bool check_sf_sk=true, bool c
 	gpu_sk_single_feed = Array<float> ({T,F,3,S}, af_gpu | af_random);
     if (check_rfimask)
 	gpu_rfimask = Array<uint> ({F,(T*Nds)/32}, {rfimask_fstride,1}, af_gpu | af_random);
+
+    // FIXME to reduce cut-and-paste here, modify definition of 'struct TestInstance'
+    // to include an SkKernel::Params.
+    SkKernel::Params params;
+    params.sk_rfimask_sigmas = ti.sk_rfimask_sigmas;
+    params.single_feed_min_good_frac = ti.single_feed_min_good_frac;
+    params.feed_averaged_min_good_frac = ti.feed_averaged_min_good_frac;
+    params.mu_min = ti.mu_min;
+    params.mu_max = ti.mu_max;
+    params.Nds = ti.Nds;
+
+    SkKernel sk_kernel(params);
     
-    launch_sk_kernel(
+    sk_kernel.launch(
         gpu_sk_feed_averaged,
 	gpu_sk_single_feed,
 	gpu_rfimask,
 	gpu_S012,
-	gpu_bf_mask,
-	ti.sk_rfimask_sigmas,
-	ti.single_feed_min_good_frac,
-	ti.feed_averaged_min_good_frac,
-	ti.mu_min,
-	ti.mu_max,
-	ti.Nds);
+	gpu_bf_mask);
 
     CUDA_CALL(cudaDeviceSynchronize());
 

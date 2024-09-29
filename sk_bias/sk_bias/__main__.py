@@ -59,7 +59,8 @@ if args.command == 'make_interpolation':
     sk_bias.write_pickle(args.pkl_outfile, interp)
 elif args.command == 'check_interpolation':
     interp = sk_bias.read_pickle(args.pkl_infile)
-    interp.check_interpolation()
+    interp.check_bias_interpolation()
+    interp.check_sigma_interpolation()
 elif args.command == 'make_plot':
     interp = sk_bias.read_pickle(args.pkl_infile)
     interp.make_plot(args.pdf_outfile)
@@ -74,7 +75,7 @@ elif args.command == 'run_transit_mcs':
     sk_bias.run_transit_mcs(args.nt, args.ndish, args.brightness)
 elif args.command == 'emit_code':
     interp = sk_bias.read_pickle(args.pkl_infile)
-    interp.emit_code()
+    sk_bias.emit_code(interp)
 elif args.command == 'test':
     sk_bias.test_ipow()
     sk_bias.MCTracker.test()

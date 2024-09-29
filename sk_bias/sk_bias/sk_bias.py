@@ -1,6 +1,7 @@
 import sys
 import pickle
 import itertools
+import contextlib
 
 import numpy as np
 import scipy.signal
@@ -506,109 +507,157 @@ class Pdf:
 
 
 class BiasInterpolator:
-    def __init__(self, *, mu_min=1.0, mu_max=90.0, num_mu=128, n_min=64, remove_zero=False):
+    def __init__(self, *, mu_min=1.0, mu_max=90.0, bias_nx=128, bias_nmin=64, sigma_nx=64, remove_zero=False):
         self.mu_min = mu_min
         self.mu_max = mu_max
-        self.n_min = n_min
+        self.bias_nmin = bias_nmin
         self.remove_zero = remove_zero
 
-        # x = log(mu)
-        self.nx = num_mu
-        self.dx = (np.log(mu_max) - np.log(mu_min)) / (num_mu-3)
-        self.xmin = np.log(mu_min) - self.dx
-        self.xmax = np.log(mu_max) + self.dx
-        self.xvec = np.linspace(self.xmin, self.xmax, num_mu)
+        # Reminder: x = log(mu)
+        dx = (np.log(mu_max) - np.log(mu_min)) / (min(bias_nx,sigma_nx) - 3)
+        self.xmin = np.log(mu_min) - dx
+        self.xmax = np.log(mu_max) + dx
+        
+        self.bias_nx = bias_nx
+        self.sigma_nx = sigma_nx
+        self.bias_xvec = np.linspace(self.xmin, self.xmax, bias_nx)
+        self.sigma_xvec = np.linspace(self.xmin, self.xmax, sigma_nx)
 
         # y = 1/n
-        self.ny = 4   # cubic interpolation
-        self.yvec = np.linspace(0, 1/n_min, self.ny)
+        self.bias_ny = 4   # cubic interpolation
+        self.yvec = np.linspace(0, 1/bias_nmin, self.bias_ny)
         self.nlist = [ None ] + [ int(1/y + 0.5) for y in self.yvec[1:] ]
         self.yvec[1:] = 1.0 / np.array(self.nlist[1:])
 
         print(f'{self.yvec=}')
         print(f'{self.nlist=}')
                 
-        # b = bias
-        self.bmat = np.zeros((self.nx, self.ny))
-        self.bcoeffs = np.zeros((self.nx, self.ny))
+        # b = bias, s = sigma
+        self.bmat = np.zeros((self.bias_nx, self.bias_ny))
+        self.bcoeffs = np.zeros((self.bias_nx, self.bias_ny))
+        self.scoeffs = np.zeros(self.sigma_nx)
 
-        for i,x in enumerate(self.xvec):
+        # Initialize self.bcoeffs
+        for i,x in enumerate(self.bias_xvec):
             mu = np.exp(x)
             pdf = Pdf.from_mu(mu)
-            for j in range(self.ny):
+            for j in range(self.bias_ny):
                 n = self.nlist[j]
-                # min_s1, max_s1 = self.minmax_list[j]
                 self.bmat[i,j] = pdf.get_bias(n)
-
             self.bcoeffs[i,:] = fit_polynomial(self.yvec, self.bmat[i,:])
 
-        self.binterp = [ scipy.interpolate.KroghInterpolator(self.xvec[i:(i+4)], self.bcoeffs[i:(i+4),:])
-                         for i in range(self.nx-3) ]
-
-            
-    def interpolate(self, *, mu, n):
-        x = np.log(mu)
-        y = 0.0 if (n is None) else (1.0/n)
-
-        t = (x - self.xvec[0]) / self.dx
-        nx = self.nx
+        # Initialize self.scoeffs
+        for i,x in enumerate(self.sigma_xvec):
+            mu = np.exp(x)
+            pdf = Pdf.from_mu(mu)
+            self.scoeffs[i] = pdf.sigma_large_n
         
-        assert t > (1 - 1.0e-10)
-        assert t < (nx-2 + 1.0e-10)
-        assert (n is None) or (n >= self.n_min)
+        # Initialize self.binterp, a list of KroghInterpolator objects:
+        #   - self.binterp[i] applies for bias_xvec[i+1] <= x <= bias_xvec[i+2]
+        #   - self.binterp[i](x) is a length-4 vector containing y-coeffs.
 
-        i = int(t + 0.5)
-        i = max(i, 1)
-        i = min(i, nx-3)
+        self.binterp = [ ]
+        for i in range(self.bias_nx-3):
+            x = scipy.interpolate.KroghInterpolator(self.bias_xvec[i:(i+4)], self.bcoeffs[i:(i+4),:])
+            self.binterp.append(x)
 
-        c = self.binterp[i-1](x)
-        assert len(c) == self.ny
+        # Initialize self.sinterp, a list of KroghInterpolator objects:
+        #   - self.sinterp[i] applies for sigma_xvec[i+1] <= x <= sigma_xvec[i+2]
+        #   - self.sinterp[i](x) is a scalar.
+
+        self.sinterp = [ ]
+        for i in range(self.sigma_nx-3):
+            x = scipy.interpolate.KroghInterpolator(self.sigma_xvec[i:(i+4)], self.scoeffs[i:(i+4)])
+            self.sinterp.append(x)
+        
+
+    def _setup_x_interpolation(self, mu, nx):
+        """Returns x, i."""
+
+        assert (self.mu_min - 1.0e-7) <= mu <= (self.mu_max + 1.0e-7)
+
+        x = np.log(mu)
+        t = (nx-1) * (x-self.xmin) / (self.xmax-self.xmin)
+        i = int(t)-1
+        i = max(i,0)
+        i = min(i,nx-4)
+        return x, i
+    
+        
+    def interpolate_bias(self, *, mu, n):
+        x, i = self._setup_x_interpolation(mu, self.bias_nx)
+        assert (self.bias_xvec[i+1] - 1.0e-7) <= x <= (self.bias_xvec[i+2] + 1.0e-7)
+        
+        y = 0.0 if (n is None) else (1.0/n)
+        assert (n is None) or (n >= self.bias_nmin)
+
+        c = self.binterp[i](x)
+        assert len(c) == self.bias_ny
 
         ret = 0
         ypow = 1
-        for j in range(self.ny):
+        for j in range(self.bias_ny):
             ret += c[j] * ypow
             ypow *= y
 
         return ret
-        
-        ypow = np.ones(self.ny)
-        for j in range(1, self.ny):
-            ypow[j] = ypow[j-1] * y
-        
-        xslice = self.xvec[(i-1):(i+3)]
-        # bslice = np.array([ neville(self.yvec, b, y) for b in self.bmat[(i-1):(i+3),:] ])
-        bslice = np.dot(self.bcoeffs[(i-1):(i+3),:], ypow)
-
-        return neville(xslice, bslice, x)
-
-
-    def eval_exact(self, *, mu, n):
-        """Only called in check_interpolation()."""
-        pdf = Pdf.from_mu(mu)
-        return pdf.get_bias(n)
 
     
-    def check_interpolation(self):
-        mu_vec = logspace(self.mu_min, self.mu_max, 5 * self.nx)
+    def interpolate_sigma(self, *, mu):
+        x, i = self._setup_x_interpolation(mu, self.sigma_nx)
+        assert (self.sigma_xvec[i+1] - 1.0e-7) <= x <= (self.sigma_xvec[i+2] + 1.0e-7)
+        return self.sinterp[i](x)
+
+    
+    def check_bias_interpolation(self):
+        """Called by 'python -m sk_bias check_interpolation'."""
+
+        print('Comparing interpolated bias to exact bias, on a grid of (mu,n) values')
+        print('Note: this does not test for extra finite-n bias due to scatter between (S1/S0) and mu_true')
         
-        nvec = logspace(self.n_min, 10 * self.n_min, 10*self.ny)[1:-1:2]
+        mu_vec = logspace(self.mu_min, self.mu_max, 5 * self.bias_nx)
+        
+        nvec = logspace(self.bias_nmin, 10 * self.bias_nmin, 10*self.bias_ny)[1:-1:2]
         nvec = np.array(nvec+0.5, dtype=int)
-        print(f'{nvec=}')
+        # print(f'{nvec=}')
         
         maxdiff = 0
         argmax = 0.0
 
         for mu in mu_vec:
+            pdf = Pdf.from_mu(mu)
+            
             for n in nvec:
-                b_exact = self.eval_exact(mu=mu, n=n)
-                b_interp = self.interpolate(mu=mu, n=n)
+                b_exact = pdf.get_bias(n)
+                b_interp = self.interpolate_bias(mu=mu, n=n)
                 diff = np.abs(b_exact - b_interp)
                 if maxdiff <= diff:
                     maxdiff = diff
                     argmax = (mu,n)
 
-        print(f'maxdiff={maxdiff} at (mu,n)={argmax}')
+        print(f'    maxdiff={maxdiff} at (mu,n)={argmax}')
+
+        
+    def check_sigma_interpolation(self):
+        """Called by 'python -m sk_bias check_interpolation'."""
+
+        print('Comparing interpolated sigma(SK) to exact sigma(SK), on a grid of mu values.')
+        print('Note: this does not test the approximation that finite-n corrections are negligible!')
+
+        mu_vec = logspace(self.mu_min, self.mu_max, 5 * self.sigma_nx)        
+        maxdiff = 0
+        argmax = 0.0
+
+        for mu in mu_vec:
+            pdf = Pdf.from_mu(mu)
+            s_exact = pdf.sigma_large_n
+            s_interp = self.interpolate_sigma(mu=mu)
+            diff = np.abs(s_interp/s_exact - 1)
+            if maxdiff <= diff:
+                maxdiff = diff
+                argmax = mu
+
+        print(f'    maxdiff={maxdiff} at mu={argmax}')
     
 
     def get_interpolated_bvec(self, n):
@@ -623,7 +672,7 @@ class BiasInterpolator:
         
         bvec = np.zeros(98*n+1)
         for s1 in range(min_s1, max_s1+1):
-            bvec[s1] = self.interpolate(mu=s1/n, n=n)
+            bvec[s1] = self.interpolate_bias(mu=s1/n, n=n)
 
         return min_s1, max_s1, bvec
     
@@ -677,35 +726,95 @@ class BiasInterpolator:
         pdf.run_mcs(n, nbatch, min_s1, max_s1, bvec)
 
 
-    def emit_code(self):
-        nx, ny = self.nx, self.ny
+####################################################################################################
 
-        print('// Autogenerated by python -m sk_bias emit_code')
-        print()
-        print('namespace n2k {')
-        print('namespace sk_globals {')
-        print()
-        print(f'double mu_min = {self.mu_min};')
-        print(f'double mu_max = {self.mu_max};')
-        print(f'double xmin = {self.xmin};')
-        print(f'double xmax = {self.xmax};')
-        print()
-        print(f'int nx = {nx};')
-        print(f'int ny = {ny};')
-        print(f'int n_min = {self.n_min};')
-        print()
-        print(f'static double bias_coeffs[{nx*ny}] = {{')
 
-        for i in range(nx):
-            for j in range(ny):
-                print(f'  {self.bcoeffs[i,j]}', end='')
-                if (i < (nx-1)) or (j < (ny-1)):
-                    print(',', end='')
-                if (j == (ny-1)):
-                    print()
+def emit_code(interp):
+    assert isinstance(interp, BiasInterpolator)
 
-        print('};')
-        print()
-        print('double *get_bias_coeffs() { return bias_coeffs; }')
-        print()
-        print('}}  // namespace n2k::global_sk')
+    hpp_filename = 'sk_globals.hpp'
+    cu_filename = 'sk_globals.cu'
+    
+    bias_nx = interp.bias_nx
+    bias_ny = interp.bias_ny
+    sigma_nx = interp.sigma_nx
+    num_debug_checks = 100
+
+    xmin = np.log(interp.mu_min)
+    xmax = np.log(interp.mu_max)
+    ymax = 1.0 / interp.bias_nmin
+    debug_x = np.random.uniform(xmin, xmax, size=num_debug_checks)
+    debug_y = np.random.uniform(0.0, ymax, size=num_debug_checks)
+    debug_b = [ interp.interpolate_bias(mu=np.exp(x), n=(1.0/y)) for x,y in zip(debug_x,debug_y) ]
+    debug_s = [ interp.interpolate_sigma(mu=np.exp(x)) for x in debug_x ]
+    
+    print(f'Writing {hpp_filename}')
+    with open(hpp_filename,'w') as f:
+        with contextlib.redirect_stdout(f):
+            print('// Autogenerated by python -m sk_bias emit_code')
+            print()
+            print('#ifndef _N2K_SK_GLOBALS_HPP')
+            print('#define _N2K_SK_GLOBALS_HPP')
+            print()
+            print('namespace n2k {')
+            print('namespace sk_globals {')
+            print('\n')
+            print(f'static constexpr double mu_min = {interp.mu_min};')
+            print(f'static constexpr double mu_max = {interp.mu_max};')
+            print(f'static constexpr double xmin = {interp.xmin};')
+            print(f'static constexpr double xmax = {interp.xmax};')
+            print()
+            print(f'static constexpr int bias_nx = {interp.bias_nx};')
+            print(f'static constexpr int bias_ny = {interp.bias_ny};')
+            print(f'static constexpr int bias_nmin = {interp.bias_nmin};')
+            print(f'static constexpr int sigma_nx = {interp.sigma_nx};')
+            print()
+            print('extern const double *get_bsigma_coeffs();')
+            print()
+            print('// Enables a unit test for consistency between python/C++ interpolators')
+            print(f'static constexpr int {num_debug_checks = };')
+            print('extern const double *get_debug_x();')
+            print('extern const double *get_debug_y();')
+            print('extern const double *get_debug_b();')
+            print('extern const double *get_debug_s();')
+            print('\n')
+            print('}}  // namespace n2k::sk_globals')
+            print()
+            print('#endif  //  _N2K_SK_GLOBALS_HPP')
+
+    
+    print(f'Writing {cu_filename}')
+    with open(cu_filename,'w') as f:
+        with contextlib.redirect_stdout(f):
+            print('// Autogenerated by python -m sk_bias emit_code')
+            print()
+            print('namespace n2k {')
+            print('namespace sk_globals {')
+            print()
+            print(f'static double bsigma_coeffs[{bias_nx}*{bias_ny} + {sigma_nx}] = {{')
+
+            for i in range(bias_nx):
+                for j in range(bias_ny):
+                    print(f'  {interp.bcoeffs[i,j]:.17g},', end='')
+                    if (j == (bias_ny-1)):
+                        print()
+
+            for i in range(sigma_nx):
+                s = ',' if (i < sigma_nx-1) else ''
+                print(f'  {interp.scoeffs[i]:.17g}{s}')
+                
+            print('};\n')
+
+            for (arr, name) in [ (debug_x,'debug_x'), (debug_y,'debug_y'), (debug_b,'debug_b'), (debug_s,'debug_s') ]:
+                print(f'static double {name}[{num_debug_checks}] = {{')
+                for i in range(num_debug_checks):
+                    s = ',' if (i < num_debug_checks-1) else ''
+                    print(f'  {arr[i]:.17g}{s}')
+                print('};\n')
+                print(f'const double *get_{name}() {{ return {name}; }}\n')
+
+            print('const double *get_bsigma_coeffs() { return bsigma_coeffs; }\n')
+            print('}}  // namespace n2k::global_sk')
+
+    print(f"Note: you'll need to copy these autogenerated source files to their proper locations")
+    

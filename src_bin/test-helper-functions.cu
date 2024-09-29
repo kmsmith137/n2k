@@ -1,6 +1,7 @@
 #include "../include/n2k/internals.hpp"
 #include "../include/n2k/interpolation.hpp"
 #include "../include/n2k/bad_feed_mask.hpp"
+#include "../include/n2k/SkKernel.hpp"
 
 #include <iostream>
 #include <gputils/Array.hpp>
@@ -201,6 +202,7 @@ static void test_bad_feed_mask()
 
 static void test_cubic_interpolate()
 {
+    cout << "test_cubic_interpolate(): start" << endl;
     vector<double> y(4);
 
     for (int i = 0; i < 10; i++) {
@@ -213,6 +215,36 @@ static void test_cubic_interpolate()
     }
 
     cout << "test_cubic_interpolate(): pass" << endl;
+}
+
+
+// -------------------------------------------------------------------------------------------------
+//
+// Tests consistency between python interpolation (sk_bias.BiasInterpolator.interpolate_{bias,sigma})
+// and CPU-side C++ interpolation (interpolate_{bias,sigma} in interpolation.hpp)
+//
+// Note: consistency between CPU-side C++ interpolation and GPU-side cuda interpolation is tested
+// later (test_gpu_interpolation() below).
+
+
+static void test_consistency_with_python_interpolation()
+{
+    cout << "test_consistency_with_python_interpolation(): start" << endl;
+    
+    const double *xvec = sk_globals::get_debug_x();
+    const double *yvec = sk_globals::get_debug_y();
+    const double *bvec = sk_globals::get_debug_b();
+    const double *svec = sk_globals::get_debug_s();
+
+    for (int i = 0; i < sk_globals::num_debug_checks; i++) {
+	double b = interpolate_sk_bias(xvec[i], yvec[i]);
+	double s = interpolate_sk_sigma(xvec[i]);
+
+	assert(fabs(b-bvec[i]) < 1.0e-10);
+	assert(fabs(s-svec[i]) < 1.0e-10);
+    }
+
+    cout << "test_consistency_with_python_interpolation(): pass" << endl;
 }
 
 
@@ -347,6 +379,89 @@ static void test_load_bias_coeffs()
 
 
 // -------------------------------------------------------------------------------------------------
+//
+// test_gpu_interpolation(): interpolate b(mu,N) and sigma(mu) on the CPU/GPU, and compare.
+//
+// This tests the following chain of __device__ inline functions in interpolation.hpp:
+//   unpack_bias_sigma_coeffs()
+//   interpolate_bias()
+//   interpolate_sigma()
+
+
+// Launch with 1 block and T threads.
+//   b_out: shape (T,)
+//   s_out: shape (T,)
+//   x_in: shape (T,)
+//   y_in: shape (T,)
+//   gmem_bsigma_coeffs: from SkKernel::
+
+__global__ void gpu_interpolation_test_kernel(float *b_out, float *s_out, const float *x_in, const float *y_in, const float *gmem_bsigma_coeffs)
+{
+    constexpr int nb = sk_globals::bias_nx;
+    constexpr int ns = sk_globals::sigma_nx;
+    __shared__ float shmem_bsigma_coeffs[12*nb + 9*ns];
+
+    unpack_bias_sigma_coeffs(gmem_bsigma_coeffs, shmem_bsigma_coeffs);
+    
+    float x = x_in[threadIdx.x];
+    float y = y_in[threadIdx.x];
+
+    b_out[threadIdx.x] = interpolate_bias(shmem_bsigma_coeffs, x, y);
+    s_out[threadIdx.x] = interpolate_sigma(shmem_bsigma_coeffs, x);
+}
+
+
+static void test_gpu_interpolation(int T)
+{
+    cout << "test_gpu_interpolation: T=" << T << endl;
+    
+    const double xmin = log(sk_globals::mu_min);   // not sk_globals::xmin
+    const double xmax = log(sk_globals::mu_max);   // not sk_globals::xmax
+    const double ymax = 1.0 / double(sk_globals::bias_nmin);
+    
+    Array<float> x_cpu({T}, af_rhost);
+    Array<float> y_cpu({T}, af_rhost);
+    Array<float> b_cpu({T}, af_uhost);
+    Array<float> s_cpu({T}, af_uhost);
+
+    for (int t = 0; t < T; t++) {
+	float x = rand_uniform(xmin, xmax);
+	float y = rand_uniform(0.0, ymax);
+	x_cpu.at({t}) = x;
+	y_cpu.at({t}) = y;
+	b_cpu.at({t}) = interpolate_sk_bias(x,y);
+	s_cpu.at({t}) = interpolate_sk_sigma(x);
+    }
+    
+    SkKernel::Params params;
+    SkKernel sk_kernel(params, false);  // check_params=false
+
+    Array<float> x_gpu = x_cpu.to_gpu();
+    Array<float> y_gpu = y_cpu.to_gpu();
+    Array<float> b_gpu({T}, af_gpu | af_random);
+    Array<float> s_gpu({T}, af_gpu | af_random);
+
+    gpu_interpolation_test_kernel <<<1,T>>>
+	(b_gpu.data, s_gpu.data, x_gpu.data, y_gpu.data, sk_kernel.bsigma_coeffs.data);
+
+    CUDA_PEEK("gpu_interpolation_test_kernel launch");
+    CUDA_CALL(cudaDeviceSynchronize());
+
+    assert_arrays_equal(b_cpu, b_gpu, "bias_cpu", "bias_gpu", {"i"});
+    assert_arrays_equal(s_cpu, s_gpu, "sigma_cpu", "sigma_gpu", {"i"});
+}
+
+
+static void test_gpu_interpolation()
+{
+    for (int i = 0; i < 10; i++) {
+	int T = 32 * rand_int(1,10);
+	test_gpu_interpolation(T);
+    }
+}
+
+    
+// -------------------------------------------------------------------------------------------------
 
 
 int main(int argc, char **argv)
@@ -355,7 +470,9 @@ int main(int argc, char **argv)
     test_transpose_bit_with_lane();
     test_bad_feed_mask();
     test_cubic_interpolate();
+    test_consistency_with_python_interpolation();
     test_load_sigma_coeffs();
     test_load_bias_coeffs();
+    test_gpu_interpolation();
     return 0;
 }

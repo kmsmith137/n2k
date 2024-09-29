@@ -22,7 +22,7 @@ template<typename T>
 struct Bvec
 {
     int n = 0;
-    double *bias_coeffs = nullptr;
+    const double *bias_coeffs = nullptr;
     
     int min_s1 = 0;
     int max_s1 = 0;
@@ -34,8 +34,8 @@ struct Bvec
     // No range check on y!
     inline double _eval_y(int ix, double y)
     {
-	using sk_globals::nx;
-	using sk_globals::ny;
+	constexpr int nx = sk_globals::bias_nx;
+	constexpr int ny = sk_globals::bias_ny;
 
 	assert((ix >= 0) && (ix < nx));
 	
@@ -54,10 +54,10 @@ struct Bvec
     // Helper function for constructor.
     inline double _interpolate(double x, double y)
     {
-	using sk_globals::xmin;
-	using sk_globals::xmax;
-	using sk_globals::nx;
-
+	constexpr float xmin = sk_globals::xmin;
+	constexpr float xmax = sk_globals::xmax;
+	constexpr int nx = sk_globals::bias_nx;
+	
 	// Normalize to [0,nx-1]
 	double t = (nx-1) * (x-xmin) / (xmax-xmin);
 	assert(t >= 0.9);
@@ -77,12 +77,12 @@ struct Bvec
     
     Bvec(int n_, bool verbose=false)
     {
-	using sk_globals::mu_min;
-	using sk_globals::mu_max;
-	using sk_globals::n_min;
+	constexpr float mu_min = sk_globals::mu_min;
+	constexpr float mu_max = sk_globals::mu_max;
+	constexpr int n_min = sk_globals::bias_nmin;
 	
 	this->n = n_;
-	this->bias_coeffs = sk_globals::get_bias_coeffs();
+	this->bias_coeffs = sk_globals::get_bsigma_coeffs();
 	assert(n >= n_min);
 
 	double eps = 5.0e-11;
