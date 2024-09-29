@@ -294,12 +294,38 @@ class Pdf:
         self.p[-1] = 1 - cdf_edges[-1]
         self.p[1:-1] = cdf_edges[1:] - cdf_edges[:-1]
 
+        # Means <x^n>
         ix = np.arange(8, dtype=float)
         x2 = np.sum(self.p * ix**2)
         x4 = np.sum(self.p * ix**4)
+        x6 = np.sum(self.p * ix**6)
+        x8 = np.sum(self.p * ix**8)
         
-        self.mu = 2*x2
-        self.b_large_n = (2*x4 + 2*x2*x2) / (2*x2)**2 - 2
+        mean_s1 = 2*x2              # <x^2 + y^2>
+        mean_s2 = 2*x4 + 2*x2*x2    # <x^4 + 2x^2y^2 + y^4>
+        mean_sk = mean_s2 / mean_s1**2 - 1
+
+        # Var(S1) = Var(x^2 + y^2)
+        #         = 2 Var(x^2) 
+        #
+        # Var(S2) = Var(x^4 + 2x^2y^2 + y^4)
+        #         = 2 Var(x^4) + 8 Cov(x^4,x^2y^2) + 4 Var(x^2y^2)
+        #
+        # Cov(S1,S2) = Cov(x^2 + y^2, x^4 + 2x^2y^2 + y^4)
+        #            = 2 Cov(x^2,x^4) + 4 Cov(x^2,x^2y^2)
+        #
+        # Var(SK) = Var(S2/S1^2)
+        #         = < [ (dS2)/S1^2 - 2 (dS1) (S2/S1^3) ]^2 >
+        #         = Var(S2)/S1^4 - 4 Cov(S1,S2) (S2/S1^5) + 4 Var(S1) (S2^2/S1^6)
+
+        var_s1 = 2*(x4-x2*x2)
+        var_s2 = 2*(x8-x4*x4) + 8*(x6-x2*x4)*x2 + 4*(x4**2-x2**4)
+        cov_s12 = 2*(x6-x2*x4) + 4*(x4-x2*x2)*x2
+        var_sk = var_s2/mean_s1**4 - 4*cov_s12*mean_s2/mean_s1**5 + 4*var_s1*mean_s2**2/mean_s1**6
+        
+        self.mu = mean_s1
+        self.b_large_n = mean_sk - 1
+        self.sigma_large_n = np.sqrt(var_sk)   # sqrt(N) * sigma
 
 
     @classmethod
@@ -321,7 +347,7 @@ class Pdf:
     
 
     def __str__(self):
-        return f'Px(rms={self.rms}, mu={self.mu}, b_large_n={self.b_large_n})'
+        return f'Pdf(rms={self.rms}, mu={self.mu}, b_large_n={self.b_large_n}, sigma_large_n={self.sigma_large_n})'
 
 
     def get_p1_p2_p3(self, n):
@@ -486,10 +512,12 @@ class Pdf:
                 nmc = tracker.n
                 pvalid = nmc / (iouter * nbatch)
                 delta = tracker.mean - predicted_bias
-                var_ratio = tracker.var / predicted_sigma**2
+                rms = np.sqrt(tracker.var) if (tracker.var > 0) else 0.0
                 ivar = (1.0 / tracker.var) if (tracker.var > 0) else 0.0
                 sigmas = delta * (ivar * nmc)**0.5
-                print(f'    nmc={nmc}  {pvalid=}  mean_bias={tracker.mean}  predicted_mean={predicted_bias}  delta={delta}  sigmas={sigmas}  (var/var_predicted)={var_ratio}')
+                print(f'    nmc={nmc}  {pvalid=}  mean_bias={tracker.mean}'
+                      + f'  predicted_mean={predicted_bias}  delta={delta} ({sigmas:.04f} sigma)'
+                      + f'  {rms=}  predicted_rms={predicted_sigma}  ratio={rms/predicted_sigma}')
 
 
 ####################################################################################################
