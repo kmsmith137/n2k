@@ -350,15 +350,15 @@ class Pdf:
         return f'Pdf(rms={self.rms}, mu={self.mu}, b_large_n={self.b_large_n}, sigma_large_n={self.sigma_large_n})'
 
 
-    def get_p1_p2_p3(self, n):
-        """Returns length-(98*n+1) vectors p1, p2, p3.
+    def get_p1_p2(self, n):
+        """Returns length-(98*n+1) vectors p1, p2.
         
             p1[s] = (probability of S1=s)
             p2[s] = (probability of S1=s) * (expectation value of S2, given S1=s)
-            p3[s] = (probability of S1=s) * (expectation value of S2^2, given S1=s)
 
-        (Note: the variable names p1,p2,p3 aren't very good!)
+        (Note: the variable names p1,p2 aren't very good!)
         """
+        
         assert n >= 2
         
         p0 = np.zeros(50)
@@ -367,42 +367,32 @@ class Pdf:
 
         p1 = np.convolve(p0, p0)
         p2 = p1 * np.arange(99)**2
-        p3 = p1 * np.arange(99)**4
 
         nout = 98*n+1
         npad = round_up_to_power_of_two(nout)
 
         q1 = np.fft.rfft(p1, n=npad)
         q2 = np.fft.rfft(p2, n=npad)
-        q3 = np.fft.rfft(p3, n=npad)
-        
-        qn1 = ipow(q1, n-2)   # p1^{n-2}
-        qn2 = n * (qn1*q2)    # n p1^{n-2} p2
-        qn3 = n * (qn1*q1*q3) + (n-1) * (qn2*q2)   # n p1^{n-1} p3 + n(n-1) p1^{n-2} p2^2
-        qn1 *= (q1*q1)        # p1^n
-        qn2 *= q1             # n p1^{n-1} p2
+
+        qn1 = ipow(q1, n-1)
+        qn2 = n*qn1*q2
+        qn1 *= q1
         
         p1 = np.fft.irfft(qn1)[:nout]
         p2 = np.fft.irfft(qn2)[:nout]
-        p3 = np.fft.irfft(qn3)[:nout]
 
-        return p1, p2, p3
+        return p1, p2
 
 
     @staticmethod
-    def _bias_and_sigma_from_p1_p2_p3(p1, p2, p3, min_s1=None, max_s1=None, bvec=None):
-        """Returns (b,sigma), given (p1,p2,p3) and an optional bvec.
+    def _bias_from_p1_p2(p1, p2, min_s1=None, max_s1=None, bvec=None):
+        """Returns b=<sk>-1, given (p1,p2) and an optional bvec.
 
-        If 'bvec' is specified, it is a length-(98*n+1) array (i.e. same shape as (p1,p2,p3))
+        If 'bvec' is specified, it is a length-(98*n+1) array (i.e. same shape as p1 or p2))
         which is indexed as bvec[S1].
 
         Recall definition of SK:
            sk = (n+1)/(n-1) * (n*S2/S1^2 - 1) - b(S1)
-
-        In this function it's convenient to factorize as follows
-           x = S2 / S1^2
-           y = t*x - b(S1)          where t = n*(n+1)/(n-1)
-           sk = y - (n+1)/(n-1)
         """
         
         n = p1.size // 98
@@ -415,30 +405,22 @@ class Pdf:
         
         assert 1 <= min_s1 <= max_s1 <= 98*n
         i, j = min_s1, (max_s1+1)
+        
+        t = np.sum(p1[i:j])
+        assert t >= 1.0e-12
+        
+        mean_s2_s1 = np.sum(p2[i:j] / np.arange(i,j)**2) / t
+        mean_sk = (n+1) / (n-1) * (n*mean_s2_s1 - 1)
 
-        p1 = p1[i:j]
-        px = p2[i:j] / np.arange(i,j)**2
-        px2 = p3[i:j] / np.arange(i,j)**4
-        b = bvec[i:j] if (bvec is not None) else np.zeros(j-i)
+        if bvec is not None:
+            assert bvec.shape == (98*n+1,)
+            mean_sk -= np.dot(p1[i:j], bvec[i:j]) / t
 
-        # y = tx-b
-        t = n*(n+1)/(n-1)
-        py = t*px - b*p1
-        py2 = (t*t)*px2 - (2*t)*(b*px) + b*b*p1
-
-        den = np.sum(p1)
-        assert den >= 1.0e-12
-
-        mean_y = np.sum(py) / den
-        mean_y2 = np.sum(py2) / den
-
-        b = mean_y - (n+1)/(n-1) - 1
-        sigma = np.sqrt(mean_y2 - mean_y**2)
-        return b, sigma
+        return mean_sk - 1
 
     
-    def get_bias_and_sigma(self, n, min_s1=None, max_s1=None, bvec=None):
-        """Returns b = <sk>-1 and sigma=Var(sk)^(1/2).
+    def get_bias(self, n, min_s1=None, max_s1=None, bvec=None):
+        """Returns b = <sk>-1.
 
         If 'bvec' is specified, it is a length-(98*n+1) array (i.e. same shape as (p1,p2,p3))
         which is indexed as bvec[S1].
@@ -448,13 +430,12 @@ class Pdf:
 
         if n is None:
             # Ignore (min_s1, max_s1, bvec)
-            return self.b_large_n, 0.0
+            return self.b_large_n
         else:
-            p1, p2, p3 = self.get_p1_p2_p3(n)
-            b, sigma = self._bias_and_sigma_from_p1_p2_p3(p1, p2, p3, min_s1, max_s1, bvec)
-            return b, sigma
-
-
+            p1, p2 = self.get_p1_p2(n)
+            return self._bias_from_p1_p2(p1, p2, min_s1, max_s1, bvec)
+        
+        
     def simulate_sk(self, n, nmc, min_s1=None, max_s1=None, bvec=None):
         """Returns 1-d array of length <= nmc, containing SK-statistics.
         The length of the array can be < nmc, if "clipped" by [min_s1,max_s1].
@@ -498,7 +479,8 @@ class Pdf:
         if nbatch is None:
             nbatch = 2**21 // n
 
-        predicted_bias, predicted_sigma = self.get_bias_and_sigma(n, min_s1, max_s1, bvec)
+        predicted_bias = self.get_bias(n, min_s1, max_s1, bvec)
+        predicted_sigma = self.sigma_large_n / n**0.5
         tracker = MCTracker()
         
         print(self)
@@ -517,7 +499,7 @@ class Pdf:
                 sigmas = delta * (ivar * nmc)**0.5
                 print(f'    nmc={nmc}  {pvalid=}  mean_bias={tracker.mean}'
                       + f'  predicted_mean={predicted_bias}  delta={delta} ({sigmas:.04f} sigma)'
-                      + f'  {rms=}  predicted_rms={predicted_sigma}  ratio={rms/predicted_sigma}')
+                      + f'  {rms=}  rms_large_n={predicted_sigma}  ratio={rms/predicted_sigma}')
 
 
 ####################################################################################################
