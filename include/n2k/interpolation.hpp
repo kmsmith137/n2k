@@ -1,6 +1,7 @@
 #ifndef _N2K_INTERPOLATION_HPP
 #define _N2K_INTERPOLATION_HPP
 
+#include <stdexcept>
 #include "device_inlines.hpp"  // bank_conflict_free_load(), roll_forward(), roll_backward()
 #include "sk_globals.hpp"
 
@@ -10,13 +11,16 @@ namespace n2k {
 #endif
 
 // This file contains inline functions (mostly __device__ inline) used for interpolating
-// SK bias and variance.
+// SK bias and variance. It is only used internally! If you're looking for launchable
+// GPU kernels, see 'struct SkKernel' (declared in SkKernel.hpp) or some of the test
+// kernels in src_bin/test-helper-functions.cu.
+
+
+// -------------------------------------------------------------------------------------------------
 //
-// If you're looking for a CPU function to interpolate SK bias/sigma, see
-// interpolate_sk_{bias,sigma} declared in SkKernel.hpp and defined in SkKernel.cu.
+// Host (and __host__ __device__) code
 //
-// If you're looking for launchable GPU kernels, see 'struct SkKernel' (declared in
-// SkKernel.hpp) or some of the test kernels in src_bin/test-helper-functions.cu.
+// Reminder: x=log(mu)=log(S1/S0), and y=(1/N)=(1/S0).
 
 
 // t = (-1,0,1,2) returns (y0,y1,y2,y3) respectively.
@@ -40,6 +44,70 @@ __host__ __device__ inline T cubic_interpolate(T t, T y0, T y1, T y2, T y3)
     T c0123 = one_third * (t+1) * (c123 - d012);
     return c0123 + d012 + c12 + y1;
 }
+
+
+__host__ inline void _set_up_cpu_interpolation(int &i, double &t, double x, int nx)
+{
+    constexpr double xmin = sk_globals::xmin;
+    constexpr double xmax = sk_globals::xmax;
+    constexpr double eps = 1.0e-6;
+
+    t = (x-xmin) / (xmax-xmin) * (nx-1);
+
+    if (t < 1-eps)
+	throw std::runtime_error("interpolate_{bias,sigma}_cpu: value of x=log(mu) is too small");
+    if (t > nx-2+eps)
+	throw std::runtime_error("interpolate_{bias,sigma}_cpu: value of x=log(mu) is too large");
+
+    i = int(t)-1;
+    i = std::max(i,0);
+    i = std::min(i,nx-4);
+    
+    t -= (i+1);
+    assert(t >= -2*eps);
+    assert(t <= 1+2*eps);
+}
+
+
+__host__ inline double interpolate_bias_cpu(double x, double y)
+{
+    constexpr double ymax = 1.0 / double(sk_globals::bias_nmin);
+    const double *btab = sk_globals::get_bsigma_coeffs();
+
+    if (y < 0.0)
+	throw std::runtime_error("interpolate_bias_cpu: value of y=1/N is negative");
+    if (y > ymax + 1.0e-6)
+	throw std::runtime_error("interpolate_bias_cpu: value of y=1/N is too large");
+    
+    int i;
+    double t;
+    _set_up_cpu_interpolation(i, t, x, sk_globals::bias_nx);
+
+    double c[4];
+    for (int j = 0; j < 4; j++)
+	c[j] = btab[4*(i+j)] + btab[4*(i+j)+1]*y + btab[4*(i+j)+2]*y*y + btab[4*(i+j)+3]*y*y*y;
+
+    // Reminder: cubic_interpolate() is defined in include/n2k/interpolation.hpp.
+    return cubic_interpolate(t, c[0], c[1], c[2], c[3]);
+}
+
+
+__host__ inline double interpolate_sigma_cpu(double x)
+{
+    const double *stab = sk_globals::get_bsigma_coeffs() + (4 * sk_globals::bias_nx);
+    
+    int i;
+    double t;
+    _set_up_cpu_interpolation(i, t, x, sk_globals::sigma_nx);
+
+    // Reminder: cubic_interpolate() is defined in include/n2k/interpolation.hpp.
+    return cubic_interpolate(t, stab[i], stab[i+1], stab[i+2], stab[i+3]);
+}
+
+
+// -------------------------------------------------------------------------------------------------
+//
+// __device__ inlines
 
 
 // load_sigma_coeffs(sigma_coeffs, i, c0, c1, c2 ,c3)
@@ -67,7 +135,6 @@ __device__ inline void load_sigma_coeffs(const float *sigma_coeffs, int i, float
     c3 = bank_conflict_free_load<Debug> (sigma_coeffs + ((8*i + t ) & ~31) - t + 31);
     roll_forward(i + (t >> 3), c0, c1, c2, c3);
 }
-
 
 
 // load_bias_coeffs(bias_coeffs, i, y, c0, c1, c2 ,c3)
@@ -160,7 +227,7 @@ __device__ void unpack_bias_sigma_coeffs(const float *gp, float *sp)
 }
 
 
-__device__ inline float interpolate_bias(const float *shmem_bsigma_coeffs, float x, float y)
+__device__ inline float interpolate_bias_gpu(const float *shmem_bsigma_coeffs, float x, float y)
 {
     constexpr int nx = sk_globals::bias_nx;   // note bias_nx (not sigma_nx) here
     constexpr float xmin = sk_globals::xmin;
@@ -179,7 +246,7 @@ __device__ inline float interpolate_bias(const float *shmem_bsigma_coeffs, float
 }
 
 
-__device__ inline float interpolate_sigma(const float *shmem_bsigma_coeffs, float x)
+__device__ inline float interpolate_sigma_gpu(const float *shmem_bsigma_coeffs, float x)
 {
     constexpr int nx = sk_globals::sigma_nx;   // note sigma_nx (not bias_nx) here
     constexpr float xmin = sk_globals::xmin;

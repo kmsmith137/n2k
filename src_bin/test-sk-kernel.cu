@@ -1,4 +1,5 @@
 #include "../include/n2k/internals.hpp"
+#include "../include/n2k/interpolation.hpp"
 #include "../include/n2k/SkKernel.hpp"
 
 #include <gputils/cuda_utils.hpp>
@@ -194,8 +195,8 @@ struct TestInstance
 		double mu = (s0 > 0.5) ? (s1/s0) : 0.0;
 		double x = sf_valid ? log(mu) : 0.0;
 		double y = sf_valid ? (1.0/s0) : 0.0;
-		double b = sf_valid ? interpolate_sk_bias(x,y) : 0.0;
-		double sigma = sf_valid ? (interpolate_sk_sigma(x) * sqrt(y)) : 0.0;
+		double b = sf_valid ? interpolate_bias_cpu(x,y) : 0.0;
+		double sigma = sf_valid ? (interpolate_sigma_cpu(x) * sqrt(y)) : 0.0;
 		double target_sk = 1.0 + sigma * sqrt(3.) * rand_uniform(-1.0,1.0);
 		double s2 = _invert_sk(s0, s1, target_sk, b);
 

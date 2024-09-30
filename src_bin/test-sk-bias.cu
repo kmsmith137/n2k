@@ -1,6 +1,5 @@
 #include "../include/n2k.hpp"
 #include "../include/n2k/interpolation.hpp"
-#include "../include/n2k/SkKernel.hpp"
 
 #include <gputils/string_utils.hpp>
 #include <iostream>
@@ -54,7 +53,7 @@ int main(int argc, char **argv)
     for (long s1 = min_s1; s1 <= max_s1; s1++) {
 	double x = log(double(s1) / double(n));
 	double y = 1.0 / double(n);
-	bvec[s1] = interpolate_sk_bias(x,y);
+	bvec[s1] = interpolate_bias_cpu(x,y);
     }
 
     long nmc = 0;

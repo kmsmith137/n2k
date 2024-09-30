@@ -78,13 +78,6 @@ struct SkKernel
 };
 
 
-// These functions are only used for testing.
-// Reminder: x=log(mu)=log(S1/S0), and y=(1/N)=(1/S0).
-
-extern double interpolate_sk_bias(double x, double y);
-extern double interpolate_sk_sigma(double x);
-
-
 }  // namespace n2k
 
 #endif // _N2K_SK_KERNEL_HPP

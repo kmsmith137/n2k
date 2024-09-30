@@ -221,7 +221,7 @@ static void test_cubic_interpolate()
 // -------------------------------------------------------------------------------------------------
 //
 // Tests consistency between python interpolation (sk_bias.BiasInterpolator.interpolate_{bias,sigma})
-// and CPU-side C++ interpolation (interpolate_{bias,sigma} in interpolation.hpp)
+// and CPU-side C++ interpolation (interpolate_{bias,sigma}_cpu in interpolation.hpp)
 //
 // Note: consistency between CPU-side C++ interpolation and GPU-side cuda interpolation is tested
 // later (test_gpu_interpolation() below).
@@ -237,8 +237,8 @@ static void test_consistency_with_python_interpolation()
     const double *svec = sk_globals::get_debug_s();
 
     for (int i = 0; i < sk_globals::num_debug_checks; i++) {
-	double b = interpolate_sk_bias(xvec[i], yvec[i]);
-	double s = interpolate_sk_sigma(xvec[i]);
+	double b = interpolate_bias_cpu(xvec[i], yvec[i]);
+	double s = interpolate_sigma_cpu(xvec[i]);
 
 	assert(fabs(b-bvec[i]) < 1.0e-10);
 	assert(fabs(s-svec[i]) < 1.0e-10);
@@ -384,8 +384,8 @@ static void test_load_bias_coeffs()
 //
 // This tests the following chain of __device__ inline functions in interpolation.hpp:
 //   unpack_bias_sigma_coeffs()
-//   interpolate_bias()
-//   interpolate_sigma()
+//   interpolate_bias_gpu()
+//   interpolate_sigma_gpu()
 
 
 // Launch with 1 block and T threads.
@@ -406,8 +406,8 @@ __global__ void gpu_interpolation_test_kernel(float *b_out, float *s_out, const 
     float x = x_in[threadIdx.x];
     float y = y_in[threadIdx.x];
 
-    b_out[threadIdx.x] = interpolate_bias(shmem_bsigma_coeffs, x, y);
-    s_out[threadIdx.x] = interpolate_sigma(shmem_bsigma_coeffs, x);
+    b_out[threadIdx.x] = interpolate_bias_gpu(shmem_bsigma_coeffs, x, y);
+    s_out[threadIdx.x] = interpolate_sigma_gpu(shmem_bsigma_coeffs, x);
 }
 
 
@@ -429,8 +429,8 @@ static void test_gpu_interpolation(int T)
 	float y = rand_uniform(0.0, ymax);
 	x_cpu.at({t}) = x;
 	y_cpu.at({t}) = y;
-	b_cpu.at({t}) = interpolate_sk_bias(x,y);
-	s_cpu.at({t}) = interpolate_sk_sigma(x);
+	b_cpu.at({t}) = interpolate_bias_cpu(x,y);
+	s_cpu.at({t}) = interpolate_sigma_cpu(x);
     }
     
     SkKernel::Params params;

@@ -173,11 +173,11 @@ __global__ void sk_kernel(
 	x = (x <= xmax) ? x : xmax;
 	
 	// Single-feed (SK, b, sigma).
-	// Note: interpolate_bias() and interpolate_sigma() are defined in interpolation.hpp
+	// Note: interpolate_bias_gpu() and interpolate_sigma_gpu() are defined in interpolation.hpp
 	// FIXME consider making computation of 'sk' more numerically stable.
 	
-	float b = interpolate_bias(shmem_bsigma_coeffs, x, y);
-	float sigma = interpolate_sigma(shmem_bsigma_coeffs, x) * sqrtf(y);  // note sqrt(y) = N^(-1/2) here
+	float b = interpolate_bias_gpu(shmem_bsigma_coeffs, x, y);
+	float sigma = interpolate_sigma_gpu(shmem_bsigma_coeffs, x) * sqrtf(y);  // note sqrt(y) = N^(-1/2) here
 	float sk = (S0+1)/(S0-1) * (S0*S2/(S1*S1) - 1) - b;
 	float sigma2 = sigma * sigma;
 
@@ -630,73 +630,6 @@ void SkKernel::launch(
 	T, F, S,
 	stream,
 	false);   // check_params
-}
-
-
-// -------------------------------------------------------------------------------------------------
-//
-// interpolate_sk_bias(), interpolate_sk_sigma()/.
-//
-// These functions are only used for testing.
-// Reminder: x=log(mu)=log(S1/S0), and y=(1/N)=(1/S0).
-
-
-inline void _set_up_x_interpolation(int &i, double &t, double x, int nx)
-{
-    constexpr double xmin = sk_globals::xmin;
-    constexpr double xmax = sk_globals::xmax;
-    constexpr double eps = 1.0e-6;
-
-    t = (x-xmin) / (xmax-xmin) * (nx-1);
-
-    if (t < 1-eps)
-	throw runtime_error("interpolate_sk_{bias,sigma}: value of x=log(mu) is too small");
-    if (t > nx-2+eps)
-	throw runtime_error("interpolate_sk_{bias,sigma}: value of x=log(mu) is too large");
-
-    i = int(t)-1;
-    i = std::max(i,0);
-    i = std::min(i,nx-4);
-    
-    t -= (i+1);
-    assert(t >= -2*eps);
-    assert(t <= 1+2*eps);
-}
-
-
-double interpolate_sk_bias(double x, double y)
-{
-    constexpr double ymax = 1.0 / double(sk_globals::bias_nmin);
-    const double *btab = sk_globals::get_bsigma_coeffs();
-
-    if (y < 0.0)
-	throw runtime_error("interpolate_sk_bias: value of y=1/N is negative");
-    if (y > ymax + 1.0e-6)
-	throw runtime_error("interpolate_sk_bias: value of y=1/N is too large");
-    
-    int i;
-    double t;
-    _set_up_x_interpolation(i, t, x, sk_globals::bias_nx);
-
-    double c[4];
-    for (int j = 0; j < 4; j++)
-	c[j] = btab[4*(i+j)] + btab[4*(i+j)+1]*y + btab[4*(i+j)+2]*y*y + btab[4*(i+j)+3]*y*y*y;
-
-    // Reminder: cubic_interpolate() is defined in include/n2k/interpolation.hpp.
-    return cubic_interpolate(t, c[0], c[1], c[2], c[3]);
-}
-
-
-double interpolate_sk_sigma(double x)
-{
-    const double *stab = sk_globals::get_bsigma_coeffs() + (4 * sk_globals::bias_nx);
-    
-    int i;
-    double t;
-    _set_up_x_interpolation(i, t, x, sk_globals::sigma_nx);
-
-    // Reminder: cubic_interpolate() is defined in include/n2k/interpolation.hpp.
-    return cubic_interpolate(t, stab[i], stab[i+1], stab[i+2], stab[i+3]);
 }
 
 
