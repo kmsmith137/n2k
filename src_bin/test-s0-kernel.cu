@@ -28,9 +28,9 @@ static void _check_args(long T, long F, long S, long ds)
 
 
 // Input array:   ulong pl_mask[T/128, (F+3)/4, S/8]
-// Output array:  uint s0[T/ds, F, S]
+// Output array:  ulong s0[T/ds, F, S]
 
-static Array<uint> reference_s0_kernel(const Array<ulong> &pl_mask, long T, long F, long S, long ds)
+static Array<ulong> reference_s0_kernel(const Array<ulong> &pl_mask, long T, long F, long S, long ds)
 {
     _check_args(T, F, S, ds);
     
@@ -40,7 +40,7 @@ static Array<uint> reference_s0_kernel(const Array<ulong> &pl_mask, long T, long
     
     assert(pl_mask.shape_equals({T/128, Fds, Sds}));
     
-    Array<uint> s0_arr({Tds, F, S}, af_rhost);
+    Array<ulong> s0_arr({Tds, F, S}, af_rhost);
     
     for (long tds = 0; tds < Tds; tds++) {
 	long t2_lo = tds * (ds >> 1);
@@ -48,7 +48,7 @@ static Array<uint> reference_s0_kernel(const Array<ulong> &pl_mask, long T, long
     
 	for (long fds = 0; fds < Fds; fds++) {
 	    for (long sds = 0; sds < Sds; sds++) {
-		uint s0_elt = 0;
+		ulong s0_elt = 0;
 
 		for (long t2 = t2_lo; t2 < t2_hi; t2++) {
 		    ulong x = pl_mask.at({t2 >> 6, fds, sds});
@@ -73,8 +73,8 @@ static void test_s0_kernel(const Array<ulong> &pl_mask, long T, long F, long S, 
     ss << "test_s0_kernel(T=" << T << ", F=" << F << ", S=" << S << ", ds=" << ds << ")";
     cout << ss.str() << ": start" << endl;
     
-    Array<uint> s0_ref = reference_s0_kernel(pl_mask, T, F, S, ds);
-    Array<uint> s0_gpu(s0_ref.ndim, s0_ref.shape, af_gpu | af_guard);
+    Array<ulong> s0_ref = reference_s0_kernel(pl_mask, T, F, S, ds);
+    Array<ulong> s0_gpu(s0_ref.ndim, s0_ref.shape, af_gpu | af_guard);
     launch_s0_kernel(s0_gpu, pl_mask.to_gpu(), ds);
     
     gputils::assert_arrays_equal(s0_ref, s0_gpu, "cpu", "gpu", {"tds","f","s"});

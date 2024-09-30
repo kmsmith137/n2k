@@ -48,7 +48,7 @@ struct SkKernel
         float *out_sk_feed_averaged,          // Shape (T,F,3)
 	float *out_sk_single_feed,            // Shape (T,F,3,S), can be NULL
 	uint *out_rfimask,                    // Shape (F,T*Nds/32), can be NULL
-	const uint *in_S012,                  // Shape (T,F,3,S)
+	const ulong *in_S012,                 // Shape (T,F,3,S)
 	const uint8_t *in_bf_mask,            // Length S (bad feed mask)
 	long rfimask_fstride,                 // Only used if (out_rfimask != NULL). NOTE: uint32 stride, not bit stride!
 	long T,                               // Number of downsampled times in S012 array
@@ -64,7 +64,7 @@ struct SkKernel
         gputils::Array<float> &out_sk_feed_averaged,   // Shape (T,F,3)
 	gputils::Array<float> &out_sk_single_feed,     // Either empty array or shape (T,F,3,S)
 	gputils::Array<uint> &out_rfimask,             // Either empty array or shape (F,T*Nds/32), need not be contiguous
-	const gputils::Array<uint> &in_S012,           // Shape (T,F,3,S)
+	const gputils::Array<ulong> &in_S012,          // Shape (T,F,3,S)
 	const gputils::Array<uint8_t> &in_bf_mask,     // Length S (bad feed bask)
 	cudaStream_t stream = 0) const;
 

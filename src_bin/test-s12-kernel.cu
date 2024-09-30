@@ -21,8 +21,8 @@ static void test_s12_kernel(int Nds, int Tout, int F, int S, int fstride)
     Array<uint8_t> e_gpu = pack_e_array(e_cpu);
     e_gpu = e_gpu.to_gpu();
     
-    Array<uint> s_cpu({Tout,F,2,S}, af_uhost | af_zero);
-    Array<uint> s_gpu({Tout,F,2,S}, {F*fstride,fstride,S,1}, af_gpu | af_guard);
+    Array<ulong> s_cpu({Tout,F,2,S}, af_uhost | af_zero);
+    Array<ulong> s_gpu({Tout,F,2,S}, {F*fstride,fstride,S,1}, af_gpu | af_guard);
 
     launch_s12_kernel(s_gpu, e_gpu, Nds);
     CUDA_CALL(cudaDeviceSynchronize());

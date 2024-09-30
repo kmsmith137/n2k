@@ -17,7 +17,7 @@ namespace n2k {
 //
 // Arguments:
 //
-//   uint     S12[Tout][F][2][S];     // output array (length-2 axis is for S1+S2 output arrays)
+//   ulong    S12[Tout][F][2][S];     // output array (length-2 axis is for S1+S2 output arrays)
 //   uint4+4  E[Tout*Nds][F][S];      // input array (electric field)
 //   int      Nds;                    // time downsampling factor
 //   int      Tout;                   // number of time samples after downsampling
@@ -56,15 +56,15 @@ __device__ __forceinline__ uint cmplx_tesseract(int real, int imaginary) {
     return square(cmplx_square(real, imaginary));
 }
 
-__device__ __forceinline__ void write_uint4(uint *p, uint a, uint b, uint c, uint d)
+__device__ __forceinline__ void write_ulong4(ulong *p, ulong a, ulong b, ulong c, ulong d)
 {
-    *((uint4 *) p) = uint4{a,b,c,d};
+    *((ulong4 *) p) = ulong4{a,b,c,d};
 }
 
 __global__ void __launch_bounds__(128, 8)
-s12_kernel(uint *S12, const uint *E, int Nds, int Tout, int F, int S, int out_fstride)
+s12_kernel(ulong *S12, const uint *E, int Nds, int Tout, int F, int S, int out_fstride)
 {
-    uint s1_0, s1_1, s1_2, s1_3, s2_0, s2_1, s2_2, s2_3;
+    ulong s1_0, s1_1, s1_2, s1_3, s2_0, s2_1, s2_2, s2_3;
     s1_0 = s1_1 = s1_2 = s1_3 = s2_0 = s2_1 = s2_2 = s2_3 = 0;
 
     // Each thread processes 4 stations, at the following base (time, freq, station_quadruple) indices.
@@ -109,14 +109,14 @@ s12_kernel(uint *S12, const uint *E, int Nds, int Tout, int F, int S, int out_fs
         s2_3 += cmplx_tesseract(e3_re, e3_im);
     }
 
-    write_uint4(S12, s1_0, s1_1, s1_2, s1_3);
-    write_uint4(S12+S, s2_0, s2_1, s2_2, s2_3);
+    write_ulong4(S12, s1_0, s1_1, s1_2, s1_3);
+    write_ulong4(S12+S, s2_0, s2_1, s2_2, s2_3);
 }
 
 
-void launch_s12_kernel(uint *S12, const uint8_t *E, long Nds, long Tout, long F, long S, long out_fstride, cudaStream_t stream)
+void launch_s12_kernel(ulong *S12, const uint8_t *E, long Nds, long Tout, long F, long S, long out_fstride, cudaStream_t stream)
 {
-    // uint     S12[Tout][F][2][S];
+    // ulong    S12[Tout][F][2][S];
     // uint4+4  E[Tout*Nds][F][S];
 
     if (!E || !S12)
@@ -151,7 +151,7 @@ void launch_s12_kernel(uint *S12, const uint8_t *E, long Nds, long Tout, long F,
 
 
 
-void launch_s12_kernel(Array<uint> &S12, const Array<uint8_t> &E, long Nds, cudaStream_t stream)
+void launch_s12_kernel(Array<ulong> &S12, const Array<uint8_t> &E, long Nds, cudaStream_t stream)
 {
     // uint     S12[Tout][F][2][S];
     // uint4+4  E[Tout*Nds][F][S];

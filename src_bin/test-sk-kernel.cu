@@ -29,14 +29,14 @@ struct TestInstance
     Array<float> out_sk_feed_averaged;    // shape (T,F,3)
     Array<float> out_sk_single_feed;      // shape (T,F,3,S)
     Array<uint> out_rfimask;              // shape (F,T*Nds/32)
-    Array<uint> in_S012;                  // shape (T,F,3,S)
+    Array<ulong> in_S012;                 // shape (T,F,3,S)
     Array<uint8_t> in_bf_mask;            // length S (bad feed bask)
 
     // Temp quantities used when generating the test instance.
     // All vectors are length-S.
-    vector<uint> S0;
-    vector<uint> S1;
-    vector<uint> S2;
+    vector<long> S0;
+    vector<long> S1;
+    vector<long> S2;
     vector<double> sf_sk;
     vector<double> sf_bias;
     vector<double> sf_sigma;
@@ -59,7 +59,7 @@ struct TestInstance
 	this->out_sk_feed_averaged = Array<float> ({T,F,3}, af_rhost | af_zero);
 	this->out_sk_single_feed = Array<float> ({T,F,3,S}, af_rhost | af_zero);
 	this->out_rfimask = Array<uint> ({F,(T*Nds)/32}, af_rhost | af_zero);
-	this->in_S012 = Array<uint> ({T,F,3,S}, af_rhost | af_zero);
+	this->in_S012 = Array<ulong> ({T,F,3,S}, af_rhost | af_zero);
 	this->in_bf_mask = Array<uint8_t> ({S}, af_rhost | af_zero);
 
 	this->sk_rfimask_sigmas = rand_uniform(0.5, 1.5);
@@ -68,9 +68,9 @@ struct TestInstance
 	this->mu_min = rand_uniform(3.0, 4.0);
 	this->mu_max = rand_uniform(20.0, 30.0);
 
-	this->S0 = vector<uint> (S);
-	this->S1 = vector<uint> (S);
-	this->S2 = vector<uint> (S);
+	this->S0 = vector<long> (S);
+	this->S1 = vector<long> (S);
+	this->S2 = vector<long> (S);
 	this->sf_sk = vector<double> (S);
 	this->sf_bias = vector<double> (S);
 	this->sf_sigma = vector<double> (S);
@@ -137,12 +137,12 @@ struct TestInstance
     // Helper function called by _init_tf_pair().
     void _init_valid_S0_S1(int s)
     {
-	uint S0_edge = round(single_feed_min_good_frac * Nds);
-	S0[s] = rand_int(S0_edge+1, Nds+1);
+	long S0_edge = round(single_feed_min_good_frac * Nds);
+	S0[s] = rand_int(S0_edge+1, Nds+1);   // FIXME rand_long()?
 	
-	uint S1_edge0 = round(mu_min * S0[s]);
-	uint S1_edge1 = round(mu_max * S0[s]);
-	S1[s] = rand_int(S1_edge0+1, S1_edge1);
+	long S1_edge0 = round(mu_min * S0[s]);
+	long S1_edge1 = round(mu_max * S0[s]);
+	S1[s] = rand_int(S1_edge0+1, S1_edge1);   // FIXME rand_long()?
     }
 
 
@@ -150,13 +150,13 @@ struct TestInstance
     void _init_invalid_S0_S1(int s)
     {
 	for (;;) {
-	    S0[s] = rand_int(-Nds/32, Nds+1);
-	    S0[s] = max(S0[s], 0);
-	    S1[s] = rand_int(0, 98*S0[s]+1);
+	    S0[s] = rand_int(-Nds/32, Nds+1);  // FIXME rand_long()?
+	    S0[s] = max(S0[s], 0L);
+	    S1[s] = rand_int(0, 98*S0[s]+1);   // FIXME rand_long()?
 	    
-	    uint S0_edge = round(single_feed_min_good_frac * Nds);
-	    uint S1_edge0 = round(mu_min * S0[s]);
-	    uint S1_edge1 = round(mu_max * S0[s]);
+	    long S0_edge = round(single_feed_min_good_frac * Nds);
+	    long S1_edge0 = round(mu_min * S0[s]);
+	    long S1_edge1 = round(mu_max * S0[s]);
 
 	    if ((S0[s] < S0_edge) || (S1[s] < S1_edge0) || (S1[s] > S1_edge1))
 		return;
@@ -266,7 +266,7 @@ static void test_sk_kernel(const TestInstance &ti, bool check_sf_sk=true, bool c
 	 << endl;
     
     // Input arrays
-    Array<uint> gpu_S012 = ti.in_S012.to_gpu();
+    Array<ulong> gpu_S012 = ti.in_S012.to_gpu();
     Array<uint8_t> gpu_bf_mask = ti.in_bf_mask.to_gpu();
 
     // Output arrays

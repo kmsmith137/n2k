@@ -15,11 +15,11 @@ static void test_s012_station_downsample(int T, int F, int S)
 {
     cout << "test_s012_station_downsample: T=" << T << ", F=" << F << ", S=" << S << endl;
 
-    Array<uint> s_in = make_random_s012_array(T,F,S);  // shape (T,F,3,S)
+    Array<ulong> s_in = make_random_s012_array(T,F,S);  // shape (T,F,3,S)
     Array<uint8_t> bf_mask = make_random_bad_feed_mask(S);
     
-    Array<uint> s_out_cpu({T,F,3}, af_uhost | af_zero);
-    Array<uint> s_out_gpu({T,F,3}, af_gpu | af_guard);
+    Array<ulong> s_out_cpu({T,F,3}, af_uhost | af_zero);
+    Array<ulong> s_out_gpu({T,F,3}, af_gpu | af_guard);
 
     for (int t = 0; t < T; t++)
 	for (int f = 0; f < F; f++)
@@ -27,7 +27,7 @@ static void test_s012_station_downsample(int T, int F, int S)
 		for (int s = 0; s < S; s++)
 		    s_out_cpu.at({t,f,n}) += (bf_mask.data[s] ? s_in.at({t,f,n,s}) : 0);
 
-    Array<uint> s_in_gpu = s_in.to_gpu();
+    Array<ulong> s_in_gpu = s_in.to_gpu();
     Array<uint8_t> bf_mask_gpu = bf_mask.to_gpu();
     launch_s012_station_downsample_kernel(s_out_gpu, s_in_gpu, bf_mask_gpu);
     CUDA_CALL(cudaDeviceSynchronize());

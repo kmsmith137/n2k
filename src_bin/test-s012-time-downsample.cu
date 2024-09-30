@@ -15,9 +15,9 @@ static void test_s012_time_downsample(int Nds, int Tout, int F, int S)
     cout << "test_s012_time_downsample: Nds=" << Nds << ", Tout=" << Tout << ", F=" << F << ", S=" << S << endl;
 
     long Tin = Tout * Nds;
-    Array<uint> s_in = make_random_s012_array(Tin,F,S);  // shape (Tin,F,3,S)
-    Array<uint> s_out_cpu({Tout,F,3,S}, af_uhost | af_zero);
-    Array<uint> s_out_gpu({Tout,F,3,S}, af_gpu | af_guard);
+    Array<ulong> s_in = make_random_s012_array(Tin,F,S);  // shape (Tin,F,3,S)
+    Array<ulong> s_out_cpu({Tout,F,3,S}, af_uhost | af_zero);
+    Array<ulong> s_out_gpu({Tout,F,3,S}, af_gpu | af_guard);
         
     for (int tout = 0; tout < Tout; tout++)
 	for (int tin = tout*Nds; tin < (tout+1)*Nds; tin++)
@@ -26,7 +26,7 @@ static void test_s012_time_downsample(int Nds, int Tout, int F, int S)
 		    for (int s = 0; s < S; s++)
 			s_out_cpu.at({tout,f,n,s}) += s_in.at({tin,f,n,s});
 
-    Array<uint> s_in_gpu = s_in.to_gpu();
+    Array<ulong> s_in_gpu = s_in.to_gpu();
     launch_s012_time_downsample_kernel(s_out_gpu, s_in_gpu, Nds);
     s_out_gpu = s_out_gpu.to_host();
 

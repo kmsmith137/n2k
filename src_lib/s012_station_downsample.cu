@@ -16,8 +16,8 @@ namespace n2k {
 
 // Kernel arguments:
 //
-//   uint S012_out[M];    // where M is number of "spectator" indices (3*T*F)
-//   uint S012_in[M][S];  // where S=2*D is number stations
+//   ulong S012_out[M];    // where M is number of "spectator" indices (3*T*F)
+//   ulong S012_in[M][S];  // where S=2*D is number stations
 //   uint bf_mask[S/4];
 //   long M;
 //   long S;
@@ -52,10 +52,10 @@ struct template_magic
     static_assert((L % N) == 0, "L must be a multiple of N");
 
     // Default template reduces case (L > N) to case (L == N).
-    static __device__ uint load_and_sum(const uint *Sin, uint bf, int m, int M, int S)
+    static __device__ ulong load_and_sum(const ulong *Sin, uint bf, int m, int M, int S)
     {
 	constexpr uint bit = (L/2);
-	uint x = template_magic<N,(L/2)>::load_and_sum(Sin, bf, m, M, S);
+	ulong x = template_magic<N,(L/2)>::load_and_sum(Sin, bf, m, M, S);
 	return x + __shfl_sync(FULL_MASK, x, threadIdx.x ^ bit);
     }
 };
@@ -64,14 +64,14 @@ template<int N>
 struct template_magic<N,N>
 {
     // This template reduces case (L == N > 1) to case (L == N == 1)
-    static __device__ uint load_and_sum(const uint *Sin, uint bf, int m, int M, int S)
+    static __device__ ulong load_and_sum(const ulong *Sin, uint bf, int m, int M, int S)
     {
 	constexpr uint bit = (N/2);
 	
-	uint x = template_magic<(N/2),(N/2)>::load_and_sum(Sin, bf, m, M, S);
-	uint y = template_magic<(N/2),(N/2)>::load_and_sum(Sin, bf, m+(N/2), M, S);
-        uint src = (threadIdx.x & bit) ? x : y;
-        uint dst = (threadIdx.x & bit) ? y : x;
+	ulong x = template_magic<(N/2),(N/2)>::load_and_sum(Sin, bf, m, M, S);
+	ulong y = template_magic<(N/2),(N/2)>::load_and_sum(Sin, bf, m+(N/2), M, S);
+        ulong src = (threadIdx.x & bit) ? x : y;
+        ulong dst = (threadIdx.x & bit) ? y : x;
 	return dst + __shfl_sync(FULL_MASK, src, threadIdx.x ^ bit);
     }
 };
@@ -80,15 +80,15 @@ template<>
 struct template_magic<1,1>
 {
     // Base case: L == N == 1.
-    static __device__ uint load_and_sum(const uint *Sin, uint bf, int m, int M, int S)
+    static __device__ ulong load_and_sum(const ulong *Sin, uint bf, int m, int M, int S)
     {
 	m = (m < M) ? m : (M-1);
 	
 	uint b = bf;
-	uint ret = 0;
+	ulong ret = 0;
 	
 	for (int s = threadIdx.x; s < S; s += blockDim.x) {
-	    uint x = Sin[m*S + s];
+	    ulong x = Sin[m*S + s];
 	    ret += ((b & 1) ? x : 0);   // don't sum bad feeds
 	    b >>= 1;
 	}
@@ -99,7 +99,7 @@ struct template_magic<1,1>
 
 
 template<int Wy>
-__global__ void s012_station_downsample_kernel(uint *Sout, const uint *Sin, const uint *bf_mask, int M, int S)
+__global__ void s012_station_downsample_kernel(ulong *Sout, const ulong *Sin, const uint *bf_mask, int M, int S)
 {
     // Spectator indices per y-warp.
     static constexpr int N = (32 / Wy);
@@ -108,13 +108,13 @@ __global__ void s012_station_downsample_kernel(uint *Sout, const uint *Sin, cons
 
     // Shared memory layout.
     extern __shared__ uint shmem[];
-    uint *shmem_bf = shmem;                 // length 32 * Wx
-    uint *shmem_red = shmem + blockDim.x;   // shape (Wx, Wy, N)
+    uint *shmem_bf = shmem;                              // length 32 * Wx
+    ulong *shmem_red = (ulong *) (shmem + blockDim.x);   // shape (Wx, Wy, N)
 
     // No syncthreads() needed after load_bad_feed_mask(), since 'shmem_bf' is not re-used.
     int m = 32*blockIdx.x + N*threadIdx.y;
     uint bf = load_bad_feed_mask(bf_mask, shmem_bf, S);
-    uint x = template_magic<N,32>::load_and_sum(Sin, bf, m, M, S);
+    ulong x = template_magic<N,32>::load_and_sum(Sin, bf, m, M, S);
 	
     if (laneId < N)
 	shmem_red[warpId*N + laneId] = x;
@@ -134,11 +134,11 @@ __global__ void s012_station_downsample_kernel(uint *Sout, const uint *Sin, cons
 }
 
 
-// uint S012_out[M];    // where M is number of "spectator" indices (3*T*F)
-// uint S012_in[M][S];  // where S=2*D is number stations
+// ulong S012_out[M];    // where M is number of "spectator" indices (3*T*F)
+// ulong S012_in[M][S];  // where S=2*D is number stations
 // uint bf_mask[S/4];
 
-void launch_s012_station_downsample_kernel(uint *Sout, const uint *Sin, const uint8_t *bf_mask, long M, long S, cudaStream_t stream)
+void launch_s012_station_downsample_kernel(ulong *Sout, const ulong *Sin, const uint8_t *bf_mask, long M, long S, cudaStream_t stream)
 {
     if (!Sout || !Sin || !bf_mask)
 	throw runtime_error("launch_s012_station_downsample_kernel(): pointer was NULL");
@@ -153,7 +153,7 @@ void launch_s012_station_downsample_kernel(uint *Sout, const uint *Sin, const ui
 
     uint Wx = (S+1023) / 1024;
     int nblocks = (M+31) / 32;
-    int shmem_nbytes = 256 * Wx;
+    int shmem_nbytes = 384 * Wx;
 
     if (Wx == 1)       // use Wy=4
 	s012_station_downsample_kernel<4> <<< nblocks, {32*Wx,4}, shmem_nbytes, stream >>> 
@@ -169,11 +169,11 @@ void launch_s012_station_downsample_kernel(uint *Sout, const uint *Sin, const ui
 }
 
 
-// uint S012_out[T][F][3];
-// uint S012_in[T][F][3][S];
+// ulong S012_out[T][F][3];
+// ulong S012_in[T][F][3][S];
 // uint8_t bf_mask[S];
 
-void launch_s012_station_downsample_kernel(Array<uint> &Sout, const Array<uint> &Sin, const Array<uint8_t> &bf_mask, cudaStream_t stream)
+void launch_s012_station_downsample_kernel(Array<ulong> &Sout, const Array<ulong> &Sin, const Array<uint8_t> &bf_mask, cudaStream_t stream)
 {
     check_array(Sout, "launch_s012_time_downsample_kernel", "Sout", 3, true);          // ndim=3, contiguous=true
     check_array(Sin, "launch_s012_time_downsample_kernel", "Sin", 4, true);            // ndim=4, contiguous=true

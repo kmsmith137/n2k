@@ -99,7 +99,7 @@ __device__ uint _cmask(int b)
 //
 // FIXME think carefully about int32 overflows!!
 
-__global__ void s0_kernel(uint4 *s0, const uint *pl, int T, int F, int S, int ds)
+__global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int ds)
 {
     static constexpr uint ALL_LANES = 0xffffffffU;
     
@@ -159,7 +159,7 @@ __global__ void s0_kernel(uint4 *s0, const uint *pl, int T, int F, int S, int ds
     s0_accum <<= 1;
     s0_accum += __shfl_sync(ALL_LANES, s0_accum, threadIdx.x ^ 0x1);
 
-    uint4 s0_x4;
+    ulong4 s0_x4;
     s0_x4.x = s0_accum;
     s0_x4.y = s0_accum;
     s0_x4.z = s0_accum;
@@ -172,7 +172,7 @@ __global__ void s0_kernel(uint4 *s0, const uint *pl, int T, int F, int S, int ds
 
 // launch_s0_kernel() arguments, bare pointer version:
 //
-//   uint s0[T/ds][F][S];                  // output array, (downsampled time index, freq channel, station)
+//   ulong s0[T/ds][F][S];                 // output array, (downsampled time index, freq channel, station)
 //   ulong pl_mask[T/128][(F+3)/4][S/8];   // input array, packet loss mask
 //   long T;                               // number of time samples
 //   long F;                               // number of freq channels
@@ -197,7 +197,7 @@ __global__ void s0_kernel(uint4 *s0, const uint *pl, int T, int F, int S, int ds
 //   - Within the larger kernel, the warp mapping is:
 //       wz wy wx <-> (tds) (f/4) (s/128)
 
-void launch_s0_kernel(uint *s0, const ulong *pl_mask, long T, long F, long S, long ds, cudaStream_t stream)
+void launch_s0_kernel(ulong *s0, const ulong *pl_mask, long T, long F, long S, long ds, cudaStream_t stream)
 {
     if (T <= 0)
 	throw runtime_error("launch_s0_kernel: number of time samples T must be > 0");
@@ -223,7 +223,7 @@ void launch_s0_kernel(uint *s0, const ulong *pl_mask, long T, long F, long S, lo
     gputils::assign_kernel_dims(nblocks, nthreads, S >> 2, (F+3) >> 2, Tds);
 
     s0_kernel <<< nblocks, nthreads, 0, stream >>>
-	((uint4 *) s0, (const uint *) pl_mask, T, F, S, ds);
+	((ulong4 *) s0, (const uint *) pl_mask, T, F, S, ds);
     
     CUDA_PEEK("s0_kernel launch");
 }
@@ -244,11 +244,11 @@ static void check_3d_array(const Array<T> &a, const char *name)
 
 // Arguments:
 //
-//  - s0: uint32 array of shape (T/ds, F, S)
+//  - s0: uint64 array of shape (T/ds, F, S)
 //  - pl_mask: uint64 array of shape (T/128, (F+3)//4, S/8).
 //  - ds: Time downsampling factor. Must be multiple of 2.
 
-void launch_s0_kernel(Array<uint> &s0, const Array<ulong> &pl_mask, long ds, cudaStream_t stream)
+void launch_s0_kernel(Array<ulong> &s0, const Array<ulong> &pl_mask, long ds, cudaStream_t stream)
 {
     check_3d_array(s0, "s0");
     check_3d_array(pl_mask, "pl_mask");

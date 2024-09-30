@@ -15,8 +15,8 @@ extern gputils::Array<std::complex<int>> make_random_unpacked_e_array(int T, int
 extern gputils::Array<std::complex<int>> unpack_e_array(const gputils::Array<uint8_t> &E_in);     // shape-preserving
 extern gputils::Array<uint8_t> pack_e_array(const gputils::Array<std::complex<int>> &E_in);       // shape-preserving
 
-extern gputils::Array<uint> make_random_s012_array(int T, int F, int S);   // returns shape (T,F,3,S)
-extern gputils::Array<uint8_t> make_random_bad_feed_mask(int S);           // returns shape (S,)
+extern gputils::Array<ulong> make_random_s012_array(int T, int F, int S);   // returns shape (T,F,3,S)
+extern gputils::Array<uint8_t> make_random_bad_feed_mask(int S);            // returns shape (S,)
 
 
 extern void _check_array(int ndim, const ssize_t *shape, const ssize_t *strides, ssize_t size, int aflags,

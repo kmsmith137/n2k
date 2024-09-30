@@ -16,7 +16,7 @@ namespace n2k {
 //
 // Arguments:
 //
-//   uint s0[T/ds][F][S];                  // output array, (downsampled time index, freq channel, station)
+//   ulong s0[T/ds][F][S];                 // output array, (downsampled time index, freq channel, station)
 //   ulong pl_mask[T/128][(F+3)/4][S/8];   // input array, packet loss mask
 //   long T;                               // number of time samples
 //   long F;                               // number of freq channels
@@ -33,18 +33,18 @@ namespace n2k {
 // Note: see s0_kernel.cu for description and discussion of packet loss mask array layout.
 
 // FIXME rename ds -> Tds
-extern void launch_s0_kernel(uint *s0, const ulong *pl_mask, long T, long F, long S, long ds, cudaStream_t stream=0);
-extern void launch_s0_kernel(gputils::Array<uint> &s0, const gputils::Array<ulong> &pl_mask, long ds, cudaStream_t stream=0);
+extern void launch_s0_kernel(ulong *s0, const ulong *pl_mask, long T, long F, long S, long ds, cudaStream_t stream=0);
+extern void launch_s0_kernel(gputils::Array<ulong> &s0, const gputils::Array<ulong> &pl_mask, long ds, cudaStream_t stream=0);
 
-extern void launch_s12_kernel(uint *S12, const uint8_t *E, long Nds, long Tout, long F, long S, long out_fstride, cudaStream_t stream=0);
-extern void launch_s12_kernel(gputils::Array<uint> &S12, const gputils::Array<uint8_t> &E, long Nds, cudaStream_t stream=0);
+extern void launch_s12_kernel(ulong *S12, const uint8_t *E, long Nds, long Tout, long F, long S, long out_fstride, cudaStream_t stream=0);
+extern void launch_s12_kernel(gputils::Array<ulong> &S12, const gputils::Array<uint8_t> &E, long Nds, cudaStream_t stream=0);
 
-extern void launch_s012_time_downsample_kernel(uint *Sout, const uint *Sin, long Nds, long Tout, long M, cudaStream_t stream=0);
-extern void launch_s012_time_downsample_kernel(gputils::Array<uint> &Sout, const gputils::Array<uint> &Sin, long Nds, cudaStream_t stream=0);
+extern void launch_s012_time_downsample_kernel(ulong *Sout, const ulong *Sin, long Nds, long Tout, long M, cudaStream_t stream=0);
+extern void launch_s012_time_downsample_kernel(gputils::Array<ulong> &Sout, const gputils::Array<ulong> &Sin, long Nds, cudaStream_t stream=0);
 
 // M is number of spectator indices (3*T*F)
-extern void launch_s012_station_downsample_kernel(uint *Sout, const uint *Sin, const uint8_t *bf_mask, long M, long S, cudaStream_t stream=0);
-extern void launch_s012_station_downsample_kernel(gputils::Array<uint> &Sout, const gputils::Array<uint> &Sin, const gputils::Array<uint8_t> &bf_mask, cudaStream_t stream=0);
+extern void launch_s012_station_downsample_kernel(ulong *Sout, const ulong *Sin, const uint8_t *bf_mask, long M, long S, cudaStream_t stream=0);
+extern void launch_s012_station_downsample_kernel(gputils::Array<ulong> &Sout, const gputils::Array<ulong> &Sin, const gputils::Array<uint8_t> &bf_mask, cudaStream_t stream=0);
 
 
 } // namespace n2k

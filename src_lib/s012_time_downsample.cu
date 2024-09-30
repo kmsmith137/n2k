@@ -15,8 +15,8 @@ namespace n2k {
 
 // Kernel arguments:
 //
-//   uint   S012_out[T/Nds][M];   // where M is number of "spectator" indices (3*F*S)
-//   uint   S012_in[T][M]; 
+//   ulong  S012_out[T/Nds][M];   // where M is number of "spectator" indices (3*F*S)
+//   ulong  S012_in[T][M]; 
 //   long   Nds;
 //   long   Tout;
 //   long   M;
@@ -30,7 +30,7 @@ namespace n2k {
 //      {threadIdx,blockIdx}.x <-> spectator index
 //      {threadIdx,blockIdx}.y <-> output (downsampled) time
 
-__global__ void s012_time_downsample_kernel(uint *Sout, const uint *Sin, int Nds, int Tout, int M)
+__global__ void s012_time_downsample_kernel(ulong *Sout, const ulong *Sin, int Nds, int Tout, int M)
 {
     // Per-thread (downsampled time, spectator index)
     uint m = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -42,7 +42,7 @@ __global__ void s012_time_downsample_kernel(uint *Sout, const uint *Sin, int Nds
     ulong out_base = M*tout + m;
     Sin += (valid ? in_base : 0);
     
-    uint s = 0;
+    ulong s = 0;
     for (int n = 0; n < Nds; n++)
 	s += Sin[n*M];
     
@@ -52,13 +52,13 @@ __global__ void s012_time_downsample_kernel(uint *Sout, const uint *Sin, int Nds
 
 // launch_s012_time_downsample_kernel(): bare-pointer interface.
 //
-//   uint   S012_out[T/Nds][M];   // where M is number of "spectator" indices (3*F*S)
-//   uint   S012_in[T][M];
+//   ulong  S012_out[T/Nds][M];   // where M is number of "spectator" indices (3*F*S)
+//   ulong  S012_in[T][M];
 //   long   Nds;
 //   long   Tout;
 //   long   M;
 
-void launch_s012_time_downsample_kernel(uint *Sout, const uint *Sin, long Nds, long Tout, long M, cudaStream_t stream)
+void launch_s012_time_downsample_kernel(ulong *Sout, const ulong *Sin, long Nds, long Tout, long M, cudaStream_t stream)
 {
     int threads_per_block = 128;
     bool noisy = false;
@@ -89,11 +89,11 @@ void launch_s012_time_downsample_kernel(uint *Sout, const uint *Sin, long Nds, l
 
 // launch_s012_time_downsample_kernel(): array interface
 //
-//   uint   S012_out[T/Nds][F][3][S];   // S must be multiple of 32
-//   uint   S012_in[T][F][3][S];
+//   ulong  S012_out[T/Nds][F][3][S];   // S must be multiple of 32
+//   ulong  S012_in[T][F][3][S];
 //   long   Nds;
 
-void launch_s012_time_downsample_kernel(Array<uint> &Sout, const Array<uint> &Sin, long Nds, cudaStream_t stream)
+void launch_s012_time_downsample_kernel(Array<ulong> &Sout, const Array<ulong> &Sin, long Nds, cudaStream_t stream)
 {
     check_array(Sout, "launch_s012_time_downsample_kernel", "Sout", 4, true);  // ndim=4, contiguous=true
     check_array(Sin, "launch_s012_time_downsample_kernel", "Sin", 4, true);    // ndim=4, contiguous=true

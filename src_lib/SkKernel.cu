@@ -80,7 +80,7 @@ __global__ void sk_kernel(
     float *out_sk_feed_averaged,         // Shape (T,F,3),
     float *out_sk_single_feed,           // Shape (T,F,3,S), can be NULL
     uint *out_rfimask,                   // Shape (F,(T*Nds)/32), can be NULL
-    const uint *in_S012,                 // Shape (T,F,3,S)
+    const ulong *in_S012,                // Shape (T,F,3,S)
     const uint *in_bf_mask,              // Shape (S/4,)
     const float *gmem_bsigma_coeffs,     // Shape (4*bias_nx + sigma_nx,)
     uint rfimask_fstride,                // Only used if (out_rfimask != NULL). NOTE: uint32 stride, not bit stride!
@@ -151,9 +151,9 @@ __global__ void sk_kernel(
 
     // Loop over stations.
     for (int s = threadIdx.x; s < S; s += blockDim.x) {
-	float S0 = in_S012[s];        // uint -> float
-	float S1 = in_S012[s+S];      // uint -> float
-	float S2 = in_S012[s+2*S];    // uint -> float
+	float S0 = in_S012[s];        // ulong -> float
+	float S1 = in_S012[s+S];      // ulong -> float
+	float S2 = in_S012[s+2*S];    // ulong -> float
 
 	float S0_min = Nds * single_feed_min_good_frac - 0.1f;
 	bool sf_valid = (S0 >= S0_min) && (S1 >= mu_min*S0) && (S1 <= mu_max*S0);
@@ -459,7 +459,7 @@ void SkKernel::launch(
     float *out_sk_feed_averaged,          // Shape (T,F,3)
     float *out_sk_single_feed,            // Shape (T,F,3,S), can be NULL
     uint *out_rfimask,                    // Shape (F,T*Nds/32), can be NULL
-    const uint *in_S012,                  // Shape (T,F,3,S)
+    const ulong *in_S012,                 // Shape (T,F,3,S)
     const uint8_t *in_bf_mask,            // Length S (bad feed mask)
     long rfimask_fstride,                 // Only used if (out_rfimask != NULL). NOTE: uint32 stride, not bit stride!
     long T,                               // Number of downsampled times in S012 array
@@ -554,7 +554,7 @@ void SkKernel::launch(
     Array<float> &out_sk_feed_averaged,   // Shape (T,F,3)
     Array<float> &out_sk_single_feed,     // Either empty array or shape (T,F,3,S)
     Array<uint> &out_rfimask,             // Either empty array or shape (F,T*Nds/32), need not be contiguous
-    const Array<uint> &in_S012,           // Shape (T,F,3,S)
+    const Array<ulong> &in_S012,          // Shape (T,F,3,S)
     const Array<uint8_t> &in_bf_mask,     // Length S (bad feed bask)
     cudaStream_t stream) const
 {

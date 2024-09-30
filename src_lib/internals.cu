@@ -12,12 +12,12 @@ namespace n2k {
 
 
 // FIXME improve!
-Array<uint> make_random_s012_array(int T, int F, int S)
+Array<ulong> make_random_s012_array(int T, int F, int S)
 {
     std::mt19937 &rng = gputils::default_rng;
     auto dist = std::uniform_int_distribution<uint>(0, 1000);
 
-    Array<uint> ret({T,F,3,S}, af_rhost);
+    Array<ulong> ret({T,F,3,S}, af_rhost);
     for (long i = 0; i < ret.size; i++)
 	ret.data[i] = dist(rng);
 

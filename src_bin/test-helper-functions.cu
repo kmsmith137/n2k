@@ -200,6 +200,7 @@ static void test_bad_feed_mask()
 // Test cubic_interpolate() in interpolation.hpp
 // FIXME this test could be improved.
 
+
 static void test_cubic_interpolate()
 {
     cout << "test_cubic_interpolate(): start" << endl;
@@ -393,7 +394,8 @@ static void test_load_bias_coeffs()
 //   s_out: shape (T,)
 //   x_in: shape (T,)
 //   y_in: shape (T,)
-//   gmem_bsigma_coeffs: from SkKernel::
+//   gmem_bsigma_coeffs: from SkKernel::bsigma_coeffs
+
 
 __global__ void gpu_interpolation_test_kernel(float *b_out, float *s_out, const float *x_in, const float *y_in, const float *gmem_bsigma_coeffs)
 {
