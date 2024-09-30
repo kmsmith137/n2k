@@ -165,7 +165,7 @@ __device__ inline float interpolate_bias(const float *shmem_bsigma_coeffs, float
     constexpr int nx = sk_globals::bias_nx;   // note bias_nx (not sigma_nx) here
     constexpr float xmin = sk_globals::xmin;
     constexpr float xmax = sk_globals::xmax;
-    constexpr float xscal = (xmax-xmin) / float(nx-1);
+    constexpr float xscal = float(nx-1) / (xmax-xmin);
 
     x = xscal * (x - sk_globals::xmin);
     int ix = int(x);
@@ -184,9 +184,9 @@ __device__ inline float interpolate_sigma(const float *shmem_bsigma_coeffs, floa
     constexpr int nx = sk_globals::sigma_nx;   // note sigma_nx (not bias_nx) here
     constexpr float xmin = sk_globals::xmin;
     constexpr float xmax = sk_globals::xmax;
-    constexpr float xscal = (xmax-xmin) / float(nx-1);
+    constexpr float xscal = float(nx-1) / (xmax-xmin);
     constexpr int nb = 8 * sk_globals::bias_nx;
-
+    
     x = xscal * (x - sk_globals::xmin);
     int ix = int(x);
     ix = (ix >= 1) ? ix : 1;

@@ -447,8 +447,8 @@ static void test_gpu_interpolation(int T)
     CUDA_PEEK("gpu_interpolation_test_kernel launch");
     CUDA_CALL(cudaDeviceSynchronize());
 
-    assert_arrays_equal(b_cpu, b_gpu, "bias_cpu", "bias_gpu", {"i"});
     assert_arrays_equal(s_cpu, s_gpu, "sigma_cpu", "sigma_gpu", {"i"});
+    assert_arrays_equal(b_cpu, b_gpu, "bias_cpu", "bias_gpu", {"i"});
 }
 
 
