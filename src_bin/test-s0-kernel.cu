@@ -1,4 +1,5 @@
-#include "../include/n2k/launch_s0_kernel.hpp"
+#include "../include/n2k/s012_kernels.hpp"
+
 #include <gputils/string_utils.hpp>
 #include <gputils/test_utils.hpp>
 #include <iostream>

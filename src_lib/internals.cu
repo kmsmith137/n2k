@@ -1,4 +1,4 @@
-#include "../include/n2k/launch_s0_kernel.hpp"
+#include "../include/n2k/internals.hpp"
 #include <gputils/cuda_utils.hpp>
 
 using namespace std;
@@ -111,50 +111,5 @@ void _check_array(int ndim, const ssize_t *shape, const ssize_t *strides, ssize_
     throw runtime_error(ss.str());
 }
 
-
-// FIXME delete this at some point
-#if 0
-
-inline void _check_err(const char *err, const char *func_name, const char *arr_name)
-{
-    if (!err)
-	return;
-
-    stringstream ss;
-    ss << func_name << "(): '" << arr_name << "' array " << err;
-    throw runtime_error(ss.str());
-}
-
-void check_s012_array(const Array<uint> &arr, const char *func_name, const char *arr_name, bool has_station_axis)
-{
-    const char *err = nullptr;
-    int expected_ndim = has_station_axis ? 4 : 3;
-
-    check_array(arr, func_name, arr_name, expected_ndim, true);  // contiguous=true
-
-    else if (arr.shape[2] != 3)
-	err = "does not have shape[2]==3 as expected";
-
-    _check_err(err, func_name, arr_name);
-}
-
-
-void check_bf_mask_array(const Array<uint8_t> &arr, const char *func_name)
-{
-    const char *err = nullptr;
-
-    if (!arr.data)
-	err = "is empty";
-    else if (arr.ndim != 1)
-	err = "is not 1-dimensional";
-    else if (!arr.on_gpu())
-	err = "is not on GPU";
-    else if (arr.strides[0] != 1)
-	err = "is not contiguous";
-
-    _check_err(err, func_name, "bad_feed_mask");
-}
-
-#endif
 
 }  // namespace n2k

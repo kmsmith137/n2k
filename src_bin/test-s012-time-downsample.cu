@@ -1,4 +1,4 @@
-#include "../include/n2k/launch_s0_kernel.hpp"
+#include "../include/n2k/s012_kernels.hpp"
 #include "../include/n2k/internals.hpp"
 
 #include <gputils/rand_utils.hpp>

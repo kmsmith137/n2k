@@ -26,7 +26,7 @@ HFILES = \
   include/n2k/device_inlines.hpp \
   include/n2k/internals.hpp \
   include/n2k/interpolation.hpp \
-  include/n2k/launch_s0_kernel.hpp \
+  include/n2k/s012_kernels.hpp \
   include/n2k/sk_globals.hpp
 
 # Kernel filename syntax is kernel_{nstations}_{nfreq}.o
