@@ -527,7 +527,7 @@ void SkKernel::launch(
     // Shared memory size.
     constexpr int bnx = sk_globals::bias_nx;
     constexpr int snx = sk_globals::sigma_nx;
-    uint shmem_nbytes = 4*max(S/32,32L) + 16*Wt*Wf*Ws + 128 + 12*bnx + 9*snx;
+    uint shmem_nbytes = 4*max(S/32,32L) + 16*Wt*Wf*Ws + 128 + 48*bnx + 36*snx;
 
     // Launch kernel!
     sk_kernel<<< {1,Bf,Bt}, {32*Ws,Wf,Wt}, shmem_nbytes, stream >>>

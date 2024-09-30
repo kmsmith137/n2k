@@ -192,8 +192,10 @@ struct TestInstance
 		double s0 = S0[s];
 		double s1 = S1[s];
 		double mu = (s0 > 0.5) ? (s1/s0) : 0.0;
-		double b = 0.001 * mu;                          // FIXME placeholder for testing
-		double sigma = (s0 > 0.5) ? sqrt(4/s0) : -1.0;  // FIXME placeholder for testing
+		double x = sf_valid ? log(mu) : 0.0;
+		double y = sf_valid ? (1.0/s0) : 0.0;
+		double b = sf_valid ? interpolate_sk_bias(x,y) : 0.0;
+		double sigma = sf_valid ? (interpolate_sk_sigma(x) * sqrt(y)) : 0.0;
 		double target_sk = 1.0 + sigma * sqrt(3.) * rand_uniform(-1.0,1.0);
 		double s2 = _invert_sk(s0, s1, target_sk, b);
 
