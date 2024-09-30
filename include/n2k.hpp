@@ -2,7 +2,6 @@
 #define _N2K_HPP
 
 #include "n2k/Correlator.hpp"
-#include "n2k/launch_rfimask_maker.hpp"
 #include "n2k/launch_s0_kernel.hpp"
 
 // Used internally

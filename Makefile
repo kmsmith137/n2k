@@ -26,7 +26,6 @@ HFILES = \
   include/n2k/device_inlines.hpp \
   include/n2k/internals.hpp \
   include/n2k/interpolation.hpp \
-  include/n2k/launch_rfimask_maker.hpp \
   include/n2k/launch_s0_kernel.hpp \
   include/n2k/sk_globals.hpp
 
@@ -35,7 +34,6 @@ OFILES = \
   src_lib/Correlator.o \
   src_lib/internals.o \
   src_lib/kernel_table.o \
-  src_lib/make_rfimask.o \
   src_lib/precompute_offsets.o \
   src_lib/s0_kernel.o \
   src_lib/s012_station_downsample.o \
@@ -77,7 +75,6 @@ XFILES = \
   bin/test-correlator \
   bin/time-correlator \
   bin/test-helper-functions \
-  bin/test-make-rfimask \
   bin/test-s0-kernel \
   bin/test-s012-station-downsample \
   bin/test-s012-time-downsample \
