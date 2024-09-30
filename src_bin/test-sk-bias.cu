@@ -148,46 +148,40 @@ int main(int argc, char **argv)
     Bvec<double> bvec(n, verbose);
 
     long nmc = 0;
-    long ndenom = 0;
     double sum_sk = 0.0;
     double sum_sk2 = 0.0;
-    int nbatch = (1<<21)/n + 1;
 
     // Run forever!
-    for (int iouter = 1; 1; iouter++) {
-	for (int b = 0; b < nbatch; b++) {
-	    int s1 = 0;
-	    int s2 = 0;
+    for (long nouter = 1; 1; nouter++) {
+	int s1 = 0;
+	int s2 = 0;
 
-	    for (int i = 0; i < n; i++) {
-		int ex = quantize(dist(rng));
-		int ey = quantize(dist(rng));
-		int e2 = ex*ex + ey*ey;
-		s1 += e2;
-		s2 += e2*e2;
-	    }
-
-	    ndenom++;
-	    
-	    if ((s1 < bvec.min_s1) || (s1 > bvec.max_s1))
-		continue;
-
-	    double ds1 = double(s1);
-	    double sk = n*s2/(ds1*ds1) - 1;
-	    sk *= (n+1) / double(n-1);
-	    sk -= bvec.bvec[s1];
-
-	    nmc++;
-	    sum_sk += sk;
-	    sum_sk2 += sk*sk;
+	for (int i = 0; i < n; i++) {
+	    int ex = quantize(dist(rng));
+	    int ey = quantize(dist(rng));
+	    int e2 = ex*ex + ey*ey;
+	    s1 += e2;
+	    s2 += e2*e2;
 	}
+	    
+	if ((s1 < bvec.min_s1) || (s1 > bvec.max_s1))
+	    continue;
 
-	if (!is_perfect_square(iouter) || (nmc < 2))
+	double ds1 = double(s1);
+	double sk = n*s2/(ds1*ds1) - 1;
+	sk *= (n+1) / double(n-1);
+	sk -= bvec.bvec[s1];
+	
+	nmc++;
+	sum_sk += sk;
+	sum_sk2 += sk*sk;
+
+	if (!is_perfect_square(nmc) || (nmc < 2))
 	    continue;
 
 	double mean = sum_sk / nmc;
 	double rms = sqrt((sum_sk2 - nmc*mean*mean) / double(nmc-1) / double(nmc));
-	double pvalid = nmc / double(ndenom);
+	double pvalid = nmc / double(nouter);
 
 	cout << "nmc=" << nmc << ", pvalid=" << pvalid
 	     << ", mean=" << mean << ", rms=" << rms << endl;
