@@ -1,5 +1,5 @@
-#ifndef _N2K_LAUNCH_S0_KERNEL_HPP
-#define _N2K_LAUNCH_S0_KERNEL_HPP
+#ifndef _N2K_S012_KERNELS_HPP
+#define _N2K_S012_KERNELS_HPP
 
 #include <gputils/Array.hpp>
 
@@ -49,4 +49,4 @@ extern void launch_s012_station_downsample_kernel(gputils::Array<uint> &Sout, co
 
 } // namespace n2k
 
-#endif // _N2K_LAUNCH_S0_KERNEL_HPP
+#endif // _N2K_S012_KERNELS_HPP
