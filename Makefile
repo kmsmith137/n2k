@@ -32,6 +32,7 @@ HFILES = \
 # Kernel filename syntax is kernel_{nstations}_{nfreq}.o
 OFILES = \
   src_lib/Correlator.o \
+  src_lib/SkKernel.o \
   src_lib/internals.o \
   src_lib/kernel_table.o \
   src_lib/precompute_offsets.o \
@@ -39,7 +40,6 @@ OFILES = \
   src_lib/s012_station_downsample.o \
   src_lib/s012_time_downsample.o \
   src_lib/s12_kernel.o \
-  src_lib/sk_kernel.o \
   src_lib/sk_globals.o \
   template_instantiations/kernel_128_1.o \
   template_instantiations/kernel_128_2.o \
