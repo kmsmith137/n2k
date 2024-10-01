@@ -26,6 +26,39 @@ namespace n2k {
 //   - output (optional): single-feed SK-statistic and associated (b,sigma).
 //   - output (optional): boolean RFI mask based on feed-averaged SK-statistic.
 //
+// Recall that the input array to the SK-kernel (single-feed S-array) has the
+// following memory layout:
+//
+//     ulong S[T][F][3][S];    // length-3 axis is {S0,S1,S2}
+//
+// The output SK-arrays have the following memory layouts:
+//
+//     // length-3 axes are {SK,b,sigma}
+//     float SK[T][F][3][S];   // Case 1: single-feed SK-statistic
+//     float SK[T][F][3];      // Case 2:feed-averaged SK-statistic
+//
+// The boolean RFI mask has the following memory layout:
+//
+//     int1 rfimask[F][T*Nds];    // high-resolution time index (multiplied by Nds)
+//
+// Note that in the RFI mask, time is the fastest varying index (usually time is
+// slowest varying). This may create complications. For example, suppose that the
+// ring buffer length 'T_ringbuf' is longer than a single kernel launch 'T_kernel':
+//
+//     uint rfimask[F][T_ringbuf * Nds / 32];   // T_ringbuf, not T_kernel
+//
+// where we represent the ringbuf as uint[F][T*Nds/32], not int1[F][T*Nds], since
+// this is the way it works in code. From the perspective of the SkKernel, the
+// rfimask is now a discontiguous subarray of a larger array. This can be handled
+// by using the 'rfimask_fstride' kernel argument (see below) to the 32-bit frequency
+// stride (T_ringbuf * Nds / 32). (If the rfimask array were contiguous, then
+// 'rfimask_fstride' would be (T_kernel * Nds / 32).)
+//
+// The SkKernel uses the "bad feed" mask when computing the feed-averaged SK-statistic
+// and the boolean RFI mask. Logically, the bad feed mask is a boolean 1-d array of
+// length S=(2*D). We represent the bad feed mask as a length-S uint8_t array, where a
+// zero value means "feed is bad", and any nonzero 8-bit value means "feed is good".
+//
 // In the larger X-engine context, two SkKernels are used (see block diagram in
 // the ``RFI statistics computed on GPU'' section of the overleaf). The first
 // SkKernel runs at ~1 ms, and computes feed-averaged SK-statistic and RFI mask
@@ -37,11 +70,19 @@ namespace n2k {
 // each frame. This is because The SkKernel constructor is less "lightweight" than you
 // might expect. (It allocates a few-KB array on the GPU, copies data from CPU to GPU,
 // and blocks until the copy is complete).
+//
+// Reminder: users of the SK-arrays (either single-feed SK or feed-averaged SK) should
+// test for negative values of sigma. There are several reasons that an SK-array element
+// can be invalid (masked), and this is indicated by setting sigma to a negative value.
 
 
 struct SkKernel
 {
-    // See overleaf for a description of these parameters.
+    // High-level parameters for the SkKernel.
+    // See overleaf for precise descriptions.
+    // We might define kotekan yaml config parameters which are in one-to-one
+    // correspondence with these parameters.
+    
     struct Params {
 	double sk_rfimask_sigmas = 0.0;             // RFI masking threshold in "sigmas" (only used if out_rfimask != NULL)
 	double single_feed_min_good_frac = 0.0;     // For single-feed SK-statistic (threshold for validity)
