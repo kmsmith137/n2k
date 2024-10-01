@@ -19,7 +19,18 @@ namespace n2k {
 // will be hard to understand unless you're familiar with this document!
 //
 // This source file declares 'class SkKernel', a wrapper class for a CUDA kernel
-// which computes the SK-statistic and boolean RFI mask from the S-arrays.
+// with the following input/output arrays:
+//
+//   - input: single-feed S-arrays (S_0, S_1, S_2) indexed by (time, freq, station).
+//   - output: feed-averaged SK-statistic and associated (b,sigma).
+//   - output (optional): single-feed SK-statistic and associated (b,sigma).
+//   - output (optional): boolean RFI mask based on feed-averaged SK-statistic.
+//
+// In the larger X-engine context, two SkKernels are used (see block diagram in
+// the ``RFI statistics computed on GPU'' section of the overleaf). The first
+// SkKernel runs at ~1 ms, and computes feed-averaged SK-statistic and RFI mask
+// (no single-feed SK-statistic). The second SkKernel runs at ~30 ms, and computes
+// single-feed and feed-averaged SK-statistics (no RFI mask).
 //
 // When processing multiple "frames" of data, you should create a persistent SkKernel
 // instance and call launch() for each frame, rather than creating a new SkKernel for

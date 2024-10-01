@@ -5,12 +5,13 @@
 #include "device_inlines.hpp"                // lop3(), blend(), FULL_MASK
 #include <gputils/constexpr_functions.hpp>   // constexpr_is_divisible()
 
+// This source file is used internally in CUDA kernels.
+// It probably won't be useful "externally" to n2k.
 
 namespace n2k {
 #if 0
 }  // editor auto-indent
 #endif
-
 
 // Compile-time parameters:
 //

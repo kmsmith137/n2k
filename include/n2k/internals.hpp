@@ -4,6 +4,8 @@
 #include <complex>
 #include <gputils/Array.hpp>
 
+// This source file is used internally for testing CUDA kernels.
+// It probably won't be useful "externally" to n2k.
 
 namespace n2k {
 #if 0

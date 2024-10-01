@@ -10,10 +10,8 @@ namespace n2k {
 }  // editor auto-indent
 #endif
 
-// This file contains inline functions (mostly __device__ inline) used for interpolating
-// SK bias and variance. It is only used internally! If you're looking for launchable
-// GPU kernels, see 'struct SkKernel' (declared in SkKernel.hpp) or some of the test
-// kernels in src_bin/test-helper-functions.cu.
+// This file contains inline functions (mostly __device__ inline) used internally.
+// It probably won't be useful "externally" to n2k.
 
 
 // -------------------------------------------------------------------------------------------------

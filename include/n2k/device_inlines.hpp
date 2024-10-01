@@ -1,11 +1,13 @@
 #ifndef _N2K_DEVICE_INLINES_HPP
 #define _N2K_DEVICE_INLINES_HPP
 
+// This source file is used internally in CUDA kernels.
+// It probably won't be useful "externally" to n2k.
+
 namespace n2k {
 #if 0
 }  // editor auto-indent
 #endif
-
 
 static constexpr uint FULL_MASK = 0xffffffffU;
 
