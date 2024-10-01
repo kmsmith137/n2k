@@ -9,18 +9,28 @@ namespace n2k {
 #endif
 
 
-// SkKernel: wrapper class for GPU kernel which computes the SK-statistic and RFI mask
-// from the S_0, S_1, S_2 statistics.
+// RFI kernels are split between two .hpp files:
+//
+//    s012_kernels.hpp: kernels which create and downsample S-arrays.
+//    SkKernel.hpp: kernel which computes SK-statistics and boolean RFI mask.
+//
+// For a description of the X-engine RFI flagging logic, see the high-level
+// software overleaf ("RFI statistics computed on GPU" section). The RFI code
+// will be hard to understand unless you're familiar with this document!
+//
+// This source file declares 'class SkKernel', a wrapper class for a CUDA kernel
+// which computes the SK-statistic and boolean RFI mask from the S-arrays.
 //
 // When processing multiple "frames" of data, you should create a persistent SkKernel
 // instance and call launch() for each frame, rather than creating a new SkKernel for
 // each frame. This is because The SkKernel constructor is less "lightweight" than you
-// might expect (it allocates a few-KB array on the GPU, copies data from CPU to GPU,
+// might expect. (It allocates a few-KB array on the GPU, copies data from CPU to GPU,
 // and blocks until the copy is complete).
 
 
 struct SkKernel
 {
+    // See overleaf for a description of these parameters.
     struct Params {
 	double sk_rfimask_sigmas = 0.0;             // RFI masking threshold in "sigmas" (only used if out_rfimask != NULL)
 	double single_feed_min_good_frac = 0.0;     // For single-feed SK-statistic (threshold for validity)
@@ -33,9 +43,8 @@ struct SkKernel
     // As noted above, the SkKernel constructor allocates a few-KB array on the GPU,
     // copies data from CPU to GPU, and blocks until the copy is complete.
     //
-    // Note: params are specified at construction, but also can be changed freely between calls to launch().
-    // That is, this sort of thing is okay:
-    //    sk_kernel->params.sk_rfimask_sigmas = 3.0;
+    // Note: params are specified at construction, but also can be changed freely between calls to launch():
+    //    sk_kernel->params.sk_rfimask_sigmas = 3.0;   // this sort of thing is okay at any time
 
     SkKernel(const Params &params, bool check_params=true);
     

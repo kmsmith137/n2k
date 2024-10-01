@@ -5,7 +5,10 @@ using namespace std;
 using namespace gputils;
 
 
-// This is a good place to describe the array layout for PL mask:
+// This is a good place to describe the array layout for PL mask.
+//
+// (See also software overleaf, section "Data sent from CPU to GPU
+// in each kotekan frame".)
 //
 //   - The PL mask is logically an array bool[T/2][F/4][S/8], where
 //     T is the number of time samples, F is number of freq channels,
@@ -72,19 +75,19 @@ __device__ uint _cmask(int b)
 
 // s0_kernel() arguments:
 //
-//   uint4 s0[T/ds][F][S/4];                  // output array, (downsampled time index, freq channel, station)
+//   uint4 s0[T/Nds][F][S/4];                 // output array, (downsampled time index, freq channel, station)
 //   uint pl_mask[T/128][(F+3)/4][S/8][2];    // input array, packet loss mask
 //   long T;                                  // number of time samples
 //   long F;                                  // number of freq channels
 //   long S;                                  // number of stations (= dish+pol pairs)
-//   long ds;                                 // time downsampling factor
+//   long Nds;                                // time downsampling factor
 //
 // Constraints (checked in launch_s0_kernel() below)
 //
-//   - ds must be even.
+//   - Nds must be even.
 //   - S must be a multiple of 128.
 //   - T must be a multiple of 128.
-//   - T must be a multiple of ds.
+//   - T must be a multiple of Nds.
 //
 // Notes on parallelization:
 //
@@ -99,7 +102,7 @@ __device__ uint _cmask(int b)
 //
 // FIXME think carefully about int32 overflows!!
 
-__global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int ds)
+__global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int Nds)
 {
     static constexpr uint ALL_LANES = 0xffffffffU;
     
@@ -113,7 +116,7 @@ __global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int d
 
     // These tests guarante that we don't write past the edge of memory.
     
-    if (tds*ds >= T)
+    if (tds*Nds >= T)
 	return;
     if (4*fds >= F)
 	return;
@@ -130,7 +133,7 @@ __global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int d
     long pl_stride = long(Fds) * long(S >> 2);
 
     // Shift output pointer, including time and laneId.
-    // Before the shifts, 's0' has shape uint4[T/ds, F, S/4].
+    // Before the shifts, 's0' has shape uint4[T/Nds, F, S/4].
     // After the shifts, 's0' has shape uint4[4] and stride (S/4).
     
     s0 += (sds << 1);
@@ -140,8 +143,8 @@ __global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int d
     int s0_stride = (S >> 2);
     
     // [t2_lo:t2_hi) = range of t2 values processed on this warp.
-    int t2_lo = tds * (ds >> 1);
-    int t2_hi = t2_lo + (ds >> 1);
+    int t2_lo = tds * (Nds >> 1);
+    int t2_hi = t2_lo + (Nds >> 1);
     
     // [t128_lo:128_hi) = range of t128 values processed on this warp.
     int t128_lo = (t2_lo >> 6);
@@ -172,19 +175,19 @@ __global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int d
 
 // launch_s0_kernel() arguments, bare pointer version:
 //
-//   ulong s0[T/ds][F][S];                 // output array, (downsampled time index, freq channel, station)
+//   ulong s0[T/Nds][F][S];                // output array, (downsampled time index, freq channel, station)
 //   ulong pl_mask[T/128][(F+3)/4][S/8];   // input array, packet loss mask
 //   long T;                               // number of time samples
 //   long F;                               // number of freq channels
 //   long S;                               // number of stations (= dish+pol pairs)
-//   long ds;                              // time downsampling factor
+//   long Nds;                             // time downsampling factor
 //
 // Constraints (checked here)
 //
-//   - ds must be even.
+//   - Nds must be even.
 //   - S must be a multiple of 128.
 //   - T must be a multiple of 128.
-//   - T must be a multiple of ds.
+//   - T must be a multiple of Nds.
 //
 // Notes on parallelization:
 //
@@ -197,7 +200,7 @@ __global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int d
 //   - Within the larger kernel, the warp mapping is:
 //       wz wy wx <-> (tds) (f/4) (s/128)
 
-void launch_s0_kernel(ulong *s0, const ulong *pl_mask, long T, long F, long S, long ds, cudaStream_t stream)
+void launch_s0_kernel(ulong *s0, const ulong *pl_mask, long T, long F, long S, long Nds, cudaStream_t stream)
 {
     if (T <= 0)
 	throw runtime_error("launch_s0_kernel: number of time samples T must be > 0");
@@ -209,21 +212,21 @@ void launch_s0_kernel(ulong *s0, const ulong *pl_mask, long T, long F, long S, l
 	throw runtime_error("launch_s0_kernel: number of stations S must be > 0");
     if (S & 127)
 	throw runtime_error("launch_s0_kernel: number of stations S must be a multiple of 128");
-    if (ds <= 0)
-	throw runtime_error("launch_s0_kernel: downsampling factor 'ds' must be positive");
-    if (ds & 1)
-	throw runtime_error("launch_s0_kernel: downsampling factor 'ds' must be even");
+    if (Nds <= 0)
+	throw runtime_error("launch_s0_kernel: downsampling factor 'Nds' must be positive");
+    if (Nds & 1)
+	throw runtime_error("launch_s0_kernel: downsampling factor 'Nds' must be even");
 
-    long Tds = T / ds;
+    long Tds = T / Nds;
     
-    if (T != (Tds * ds))
-	throw runtime_error("launch_s0_kernel: number of time samples T must be a multiple of downsampling factor 'ds'");
+    if (T != (Tds * Nds))
+	throw runtime_error("launch_s0_kernel: number of time samples T must be a multiple of downsampling factor 'Nds'");
 
     dim3 nblocks, nthreads;
     gputils::assign_kernel_dims(nblocks, nthreads, S >> 2, (F+3) >> 2, Tds);
 
     s0_kernel <<< nblocks, nthreads, 0, stream >>>
-	((ulong4 *) s0, (const uint *) pl_mask, T, F, S, ds);
+	((ulong4 *) s0, (const uint *) pl_mask, T, F, S, Nds);
     
     CUDA_PEEK("s0_kernel launch");
 }
@@ -244,11 +247,11 @@ static void check_3d_array(const Array<T> &a, const char *name)
 
 // Arguments:
 //
-//  - s0: uint64 array of shape (T/ds, F, S)
+//  - s0: uint64 array of shape (T/Nds, F, S)
 //  - pl_mask: uint64 array of shape (T/128, (F+3)//4, S/8).
-//  - ds: Time downsampling factor. Must be multiple of 2.
+//  - Nds: Time downsampling factor. Must be multiple of 2.
 
-void launch_s0_kernel(Array<ulong> &s0, const Array<ulong> &pl_mask, long ds, cudaStream_t stream)
+void launch_s0_kernel(Array<ulong> &s0, const Array<ulong> &pl_mask, long Nds, cudaStream_t stream)
 {
     check_3d_array(s0, "s0");
     check_3d_array(pl_mask, "pl_mask");
@@ -261,10 +264,10 @@ void launch_s0_kernel(Array<ulong> &s0, const Array<ulong> &pl_mask, long ds, cu
     long Fds = pl_mask.shape[1];
     long Sds = pl_mask.shape[2];
 
-    if ((Tds*ds != T128*128) || (Fds != ((F+3)/4)) || (S != (Sds*8)))
+    if ((Tds*Nds != T128*128) || (Fds != ((F+3)/4)) || (S != (Sds*8)))
 	throw runtime_error("launch_s0_kernel: s0.shape=" + s0.shape_str() + " and pl_mask.shape=" + pl_mask.shape_str() + " are inconsistent");
 
-    launch_s0_kernel(s0.data, pl_mask.data, 128*T128, F, S, ds, stream);
+    launch_s0_kernel(s0.data, pl_mask.data, 128*T128, F, S, Nds, stream);
 }
 
 
