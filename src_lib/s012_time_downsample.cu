@@ -30,12 +30,12 @@ namespace n2k {
 //      {threadIdx,blockIdx}.x <-> spectator index
 //      {threadIdx,blockIdx}.y <-> output (downsampled) time
 
-__global__ void s012_time_downsample_kernel(ulong *Sout, const ulong *Sin, int Nds, int Tout, int M)
+__global__ void s012_time_downsample_kernel(ulong *Sout, const ulong *Sin, int Tds, int M, int Nds)
 {
     // Per-thread (downsampled time, spectator index)
     uint m = (blockIdx.x * blockDim.x) + threadIdx.x;
     ulong tout = (blockIdx.y * blockDim.y) + threadIdx.y;
-    bool valid = (m < M) && (tout < Tout);
+    bool valid = (m < M) && (tout < Tds);
 
     // Per-thread base indices and pointer shift.
     ulong in_base = (M*Nds)*tout + m;
@@ -54,23 +54,28 @@ __global__ void s012_time_downsample_kernel(ulong *Sout, const ulong *Sin, int N
 //
 //   ulong  S012_out[T/Nds][M];   // where M is number of "spectator" indices (3*F*S)
 //   ulong  S012_in[T][M];
-//   long   Nds;
-//   long   Tout;
-//   long   M;
+//   long   T;                    // number of time samples before downsampling
+//   long   M;                    // number of spectator indices (3*F*S), see above
+//   long   Nds;                  // time downsampling factor
 
-void launch_s012_time_downsample_kernel(ulong *Sout, const ulong *Sin, long Nds, long Tout, long M, cudaStream_t stream)
+void launch_s012_time_downsample_kernel(ulong *Sout, const ulong *Sin, long T, long M, long Nds, cudaStream_t stream)
 {
     int threads_per_block = 128;
     bool noisy = false;
 
     if ((Sout == nullptr) || (Sin == nullptr))
 	throw runtime_error("launch_s012_time_downsample_kernel(): data pointer was NULL");
-    if (Nds <= 0)
-	throw runtime_error("launch_s012_time_downsample_kernel(): expected Nds > 0");
-    if (Tout <= 0)
-	throw runtime_error("launch_s012_time_downsample_kernel(): expected Tout > 0");
+    if (T <= 0)
+	throw runtime_error("launch_s012_time_downsample_kernel(): expected Tds > 0");
     if (M <= 0)
 	throw runtime_error("launch_s012_time_downsample_kernel(): expected M > 0");
+    if (Nds <= 0)
+	throw runtime_error("launch_s012_time_downsample_kernel(): expected Nds > 0");
+
+    long Tds = T/Nds;
+
+    if (T != Tds*Nds)
+	throw runtime_error("launch_s012_time_downsample_kernel(): T must be a multiple of Nds");	
     
     // Necessary for efficiency (but not correctness) of kernel.
     // Always satisfied for CHORD, CHIME, HIRAX.
@@ -78,10 +83,10 @@ void launch_s012_time_downsample_kernel(ulong *Sout, const ulong *Sin, long Nds,
 	throw runtime_error("launch_s012_time_downsample_kernel(): expected M to be a multple of 32");
     
     dim3 nblocks, nthreads;
-    gputils::assign_kernel_dims(nblocks, nthreads, M, Tout, 1, threads_per_block, noisy);
+    gputils::assign_kernel_dims(nblocks, nthreads, M, Tds, 1, threads_per_block, noisy);
 
     s012_time_downsample_kernel <<< nblocks, nthreads, 0, stream >>>
-	(Sout, Sin, Nds, Tout, M);
+	(Sout, Sin, Tds, M, Nds);
 
     CUDA_PEEK("launch s012_time_downsample");
 }
@@ -109,10 +114,10 @@ void launch_s012_time_downsample_kernel(Array<ulong> &Sout, const Array<ulong> &
     if (Sin.shape[3] != Sout.shape[3])
 	throw runtime_error("launch_s012_time_downsample_kernel(): inconsistent number of stations in input/output arrays");
 
-    long Tout = Sout.shape[0];
-    long M = 3 * Sout.shape[1] * Sout.shape[3];
+    long T = Sin.shape[0];
+    long M = 3 * Sin.shape[1] * Sin.shape[3];
     
-    launch_s012_time_downsample_kernel(Sout.data, Sin.data, Nds, Tout, M, stream);
+    launch_s012_time_downsample_kernel(Sout.data, Sin.data, T, M, Nds, stream);
 }
 
 

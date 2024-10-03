@@ -10,23 +10,6 @@ using namespace gputils;
 using namespace n2k;
 
 
-// These are the constraints needed by the GPU kernel.
-// (Not all of these constraints are needed by the reference kernel.)
-
-static void _check_args(long T, long F, long S, long Nds)
-{
-    assert(T > 0);
-    assert(F > 0);
-    assert(S > 0);
-    assert(Nds > 0);
-
-    assert((T % 128) == 0);
-    assert((S % 128) == 0);
-    assert((T % Nds) == 0);
-    assert((Nds % 2) == 0);
-}
-
-
 // Input array:   ulong pl_mask[T/128, (F+3)/4, S/8]
 // Output array:  ulong s0[T/Nds, F, S]
 
@@ -67,22 +50,23 @@ static Array<ulong> reference_s0_kernel(const Array<ulong> &pl_mask, long T, lon
 }
 
 
-static void test_s0_kernel(const Array<ulong> &pl_mask, long T, long F, long S, long Nds)
+static void test_s0_kernel(const Array<ulong> &pl_mask, long T, long F, long S, long Nds, long fstride)
 {
     stringstream ss;
-    ss << "test_s0_kernel(T=" << T << ", F=" << F << ", S=" << S << ", Nds=" << Nds << ")";
+    ss << "test_s0_kernel(T=" << T << ", F=" << F << ", S=" << S << ", Nds=" << Nds << ", fstride=" << fstride << ")";
     cout << ss.str() << ": start" << endl;
     
     Array<ulong> s0_ref = reference_s0_kernel(pl_mask, T, F, S, Nds);
-    Array<ulong> s0_gpu(s0_ref.ndim, s0_ref.shape, af_gpu | af_guard);
-    launch_s0_kernel(s0_gpu, pl_mask.to_gpu(), Nds);
+    Array<ulong> s0_gpu({T/Nds,F,S}, {F*fstride,fstride,1}, af_gpu | af_guard);
+    Array<ulong> pl_mask_gpu = pl_mask.to_gpu();
+    launch_s0_kernel(s0_gpu, pl_mask_gpu, Nds);
     
     gputils::assert_arrays_equal(s0_ref, s0_gpu, "cpu", "gpu", {"tds","f","s"});
     cout << ss.str() << ": pass" << endl;
 }
 
 
-static void test_s0_kernel(long T, long F, long S, long Nds)
+static void test_s0_kernel(long T, long F, long S, long Nds, long fstride)
 {
     Array<ulong> pl_mask({T/128, (F+3)/4, S/8}, af_rhost);
     ulong *pl = pl_mask.data;
@@ -93,7 +77,7 @@ static void test_s0_kernel(long T, long F, long S, long Nds)
 	pl[i] ^= (ulong(default_rng()) << 44);
     }
 
-    test_s0_kernel(pl_mask, T, F, S, Nds);
+    test_s0_kernel(pl_mask, T, F, S, Nds, fstride);
 }
 
 
@@ -102,9 +86,13 @@ static void test_s0_kernel()
     long Nds = 2 * rand_int(1, 200);
     long Tdiv = std::lcm(Nds, 128);
 
-    // v = (T/Tdiv, F, S/128).
     vector<ssize_t> v = gputils::random_integers_with_bounded_product(3, (1000*1000)/Tdiv);
-    test_s0_kernel(v[0]*Tdiv, v[1], v[2]*128, Nds);  // (T, F, S, Nds)
+    long T = v[0]*Tdiv;
+    long F = v[1];
+    long S = v[2]*128;
+    
+    long fstride = 4 * rand_int(S/4, S+1);
+    test_s0_kernel(T, F, S, Nds, fstride);
 }
 
 

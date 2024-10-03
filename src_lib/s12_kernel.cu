@@ -17,10 +17,10 @@ namespace n2k {
 //
 // Arguments:
 //
-//   ulong    S12[Tout][F][2][S];     // output array (length-2 axis is for S1+S2 output arrays)
-//   uint4+4  E[Tout*Nds][F][S];      // input array (electric field)
+//   ulong    S12[Tds][F][2][S];     // output array (length-2 axis is for S1+S2 output arrays)
+//   uint4+4  E[Tds*Nds][F][S];      // input array (electric field)
 //   int      Nds;                    // time downsampling factor
-//   int      Tout;                   // number of time samples after downsampling
+//   int      Tds;                   // number of time samples after downsampling
 //   int      F;                      // number of frequency channels
 //   int      S;                      // number of stations
 //   int      out_fstride;            // output stride (minimal value is 2*S)
@@ -62,7 +62,7 @@ __device__ __forceinline__ void write_ulong4(ulong *p, ulong a, ulong b, ulong c
 }
 
 __global__ void __launch_bounds__(128, 8)
-s12_kernel(ulong *S12, const uint *E, int Nds, int Tout, int F, int S, int out_fstride)
+s12_kernel(ulong *S12, const uint *E, int Tds, int F, int S, int Nds, int out_fstride)
 {
     ulong s1_0, s1_1, s1_2, s1_3, s2_0, s2_1, s2_2, s2_3;
     s1_0 = s1_1 = s1_2 = s1_3 = s2_0 = s2_1 = s2_2 = s2_3 = 0;
@@ -73,12 +73,12 @@ s12_kernel(ulong *S12, const uint *E, int Nds, int Tout, int F, int S, int out_f
     uint sq = (blockIdx.x * blockDim.x) + threadIdx.x;       // station quadruple
     uint Q = (S >> 2);                                       // number of quadruples
 
-    if ((tout >= Tout) || (freq >= F) || (sq >= Q))
+    if ((tout >= Tds) || (freq >= F) || (sq >= Q))
 	return;
     
     // Per-thread pointer shifts.
-    // uint S12[Tout][F][2][S];
-    // uint E[Tout*Nds][F][Q];
+    // uint S12[Tds][F][2][S];
+    // uint E[Tds*Nds][F][Q];
     
     S12 += (tout*F + freq) * out_fstride + (4*sq);
     E += (Nds*F*Q)*tout + Q*freq + sq;
@@ -114,37 +114,41 @@ s12_kernel(ulong *S12, const uint *E, int Nds, int Tout, int F, int S, int out_f
 }
 
 
-void launch_s12_kernel(ulong *S12, const uint8_t *E, long Nds, long Tout, long F, long S, long out_fstride, cudaStream_t stream)
+void launch_s12_kernel(ulong *S12, const uint8_t *E, long T, long F, long S, long Nds, long out_fstride, cudaStream_t stream)
 {
-    // ulong    S12[Tout][F][2][S];
-    // uint4+4  E[Tout*Nds][F][S];
-
+    // ulong    S12[T/Tds][F][2][S];
+    // uint4+4  E[T][F][S];
+    
     if (!E || !S12)
-	throw std::runtime_error("launch_s12_kernel(): null array pointer was specified");
+	throw runtime_error("launch_s12_kernel(): null array pointer was specified");
     
     // Define some reasonable ranges for integer-valued arguments.
-    if ((Nds <= 0) || (Nds > 10000))
-	throw std::runtime_error("launch_s12_kernel(): invalid value of Nds");
-    if ((Tout <= 0) || (Tout > 10000))
-	throw std::runtime_error("launch_s12_kernel(): invalid value of Tout");
+    if ((T <= 0) || (T > 1000000))
+	throw runtime_error("launch_s12_kernel(): invalid value of T");
     if ((F <= 0) || (F > 10000))
-	throw std::runtime_error("launch_s12_kernel(): invalid value of F");
+	throw runtime_error("launch_s12_kernel(): invalid value of F");
     if ((S <= 0) || (S > 10000))
-	throw std::runtime_error("launch_s12_kernel(): invalid value of S");
+	throw runtime_error("launch_s12_kernel(): invalid value of S");
+    if ((Nds <= 0) || (Nds > 10000))
+	throw runtime_error("launch_s12_kernel(): invalid value of Nds");
+
+    long Tds = T/Nds;
 
     // Some more substantial checks.
     if (S % 128)
-	throw std::runtime_error("launch_s12_kernel(): S must be a multiple of 128");		
+	throw runtime_error("launch_s12_kernel(): S must be a multiple of 128");		
+    if (T != Tds*Nds)
+	throw runtime_error("launch_s12_kernel(): T must be a multiple of Nds");	
     if (out_fstride < 2*S)
-	throw std::runtime_error("launch_s12_kernel(): invalid value of out_fstride");	
+	throw runtime_error("launch_s12_kernel(): out_fstride must be >= 2*S");	
     if (out_fstride % 4)
-	throw std::runtime_error("launch_s12_kernel(): out_fstride must be a multiple of 4");
-    
+	throw runtime_error("launch_s12_kernel(): out_fstride must be a multiple of 4");
+
     dim3 nblocks, nthreads;
-    gputils::assign_kernel_dims(nblocks, nthreads, S/4, F, Tout);
+    gputils::assign_kernel_dims(nblocks, nthreads, S/4, F, Tds);
     
     s12_kernel <<< nblocks, nthreads, 0, stream >>>
-	(S12, (const uint *) E, Nds, Tout, F, S, out_fstride);
+	(S12, (const uint *) E, Tds, F, S, Nds, out_fstride);
 
     CUDA_PEEK("s12 kernel launch");
 }
@@ -153,32 +157,32 @@ void launch_s12_kernel(ulong *S12, const uint8_t *E, long Nds, long Tout, long F
 
 void launch_s12_kernel(Array<ulong> &S12, const Array<uint8_t> &E, long Nds, cudaStream_t stream)
 {
-    // uint     S12[Tout][F][2][S];
-    // uint4+4  E[Tout*Nds][F][S];
-    
+    // ulong    S12[T/Tds][F][2][S];
+    // uint4+4  E[T][F][S];
+
     check_array(S12, "launch_s12_kernel", "S12", 4, false);  // ndim=4, contiguous=false
     check_array(E, "launch_s12_kernel", "E", 3, true);       // ndim=3, contiguous=true
 
-    if (E.shape[0] != S12.shape[0] * Nds)
+    long T = E.shape[0];
+    long F = E.shape[1];
+    long S = E.shape[2];
+    long out_fstride = S12.strides[1];
+
+    if (S12.shape[0] * Nds != E.shape[0])
 	throw runtime_error("launch_s012_time_downsample_kernel(): inconsistent number of time samples in S12 and E arrays");
-    if (E.shape[1] != S12.shape[1])
+    if (S12.shape[1] != E.shape[1])
 	throw runtime_error("launch_s012_time_downsample_kernel(): inconsistent number of frequency channels in S12 and E arrays");
-    if (E.shape[2] != S12.shape[3])
-	throw runtime_error("launch_s012_time_downsample_kernel(): inconsistent number of stations in S12 and E arrays");
     if (S12.shape[2] != 2)
 	throw runtime_error("launch_s012_time_downsample_kernel(): expected axis 2 of S12 array to have length 2");
-
-    long Tout = S12.shape[0];
-    long F = S12.shape[1];
-    long S = S12.shape[3];
-    long out_fstride = S12.strides[1];
+    if (S12.shape[3] != E.shape[2])
+	throw runtime_error("launch_s012_time_downsample_kernel(): inconsistent number of stations in S12 and E arrays");
     
     if ((S12.strides[2] != S) || (S12.strides[3] != 1))
 	throw runtime_error("launch_s012_time_downsample_kernel(): expected inner two axes (with shape (2,S)) of S12 array to be contiguous");
     if (S12.strides[0] != F*out_fstride)
 	throw runtime_error("launch_s012_time_downsample_kernel(): expected time+freq axes of S12 to be contiguous");
 
-    launch_s12_kernel(S12.data, E.data, Nds, Tout, F, S, out_fstride, stream);
+    launch_s12_kernel(S12.data, E.data, T, F, S, Nds, out_fstride, stream);
 }
 
 

@@ -75,20 +75,21 @@ namespace n2k {
 
 // Version 1: bare-pointer interface.
 extern void launch_s0_kernel(
-    ulong *s0,                   // output array, shape (T/Nds, F, S)
+    ulong *S0,                   // output array, shape (T/Nds, F, S)
     const ulong *pl_mask,        // input array, shape (T/128, (F+3)/4, S/8), see above
     long T,                      // number of time samples in input array (before downsampling)
     long F,                      // number of frequency channels
     long S,                      // number of stations (= 2*D, where D is number of dishes)
     long Nds,                    // time downsampling factor
+    long out_fstride,            // frequency stride in 'S0' array, see comment above.
     cudaStream_t stream=0);
 
 
 // Version 2: gputils::Array<> interface.
-// Note that there is no 'out_fstride' arugment, since 's0' is a gputils::Array, which contains strides.
+// Note that there is no 'out_fstride' arugment, since 'S0' is a gputils::Array, which contains strides.
 
 extern void launch_s0_kernel(
-     gputils::Array<ulong> &s0,              // output array, shape (T/Nds, F, S)
+     gputils::Array<ulong> &S0,              // output array, shape (T/Nds, F, S)
      const gputils::Array<ulong> &pl_mask,   // input array, shape (T/128, (F+3)/4, S/8), see above
      long Nds,                               // time downsampling factor
      cudaStream_t stream=0);
@@ -119,10 +120,10 @@ extern void launch_s0_kernel(
 extern void launch_s12_kernel(
     ulong *S12,           // output array, shape (T/Nds, F, 2, S)
     const uint8_t *E,     // input int4+4 array, shape (T, F, S)
-    long Nds,             // time downsampling factor
-    long Tout,            // number of downsampled time samples (T/Nds)
+    long T,               // number of time samples in input array (before downsampling)
     long F,               // number of frequency channels
     long S,               // number of stations (= 2*D, where D is number of dishes)
+    long Nds,             // time downsampling factor
     long out_fstride,     // frequency stride in 'S12' array, see comment above.
     cudaStream_t stream=0);
 
@@ -159,9 +160,9 @@ extern void launch_s12_kernel(
 extern void launch_s012_time_downsample_kernel(
     ulong *Sout,        // output array, shape (T/Nds,3,F,S) or equivalently (T/Nds,M)
     const ulong *Sin,   // input array, shape (T,3,F,S) or equivalently (T,M)
-    long Nds,           // time downsampling factor
-    long Tout,          // number of downsampled time samples (T/Nds)
+    long T,             // number of time samples before downsampling
     long M,             // number of spectator indices (3*F*S), see above
+    long Nds,           // time downsampling factor
     cudaStream_t stream=0);
 
 // Version 2: gputils::Array<> interface.

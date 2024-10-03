@@ -81,6 +81,7 @@ __device__ uint _cmask(int b)
 //   long F;                                  // number of freq channels
 //   long S;                                  // number of stations (= dish+pol pairs)
 //   long Nds;                                // time downsampling factor
+//   long out_fstride4;                       // freq stride of s0 array (ulong4 stride, not ulong stride)
 //
 // Constraints (checked in launch_s0_kernel() below)
 //
@@ -88,6 +89,8 @@ __device__ uint _cmask(int b)
 //   - S must be a multiple of 128.
 //   - T must be a multiple of 128.
 //   - T must be a multiple of Nds.
+//   - out_fstride must be a multiple of 4.
+//   - out_fstride must be >= S.
 //
 // Notes on parallelization:
 //
@@ -102,7 +105,7 @@ __device__ uint _cmask(int b)
 //
 // FIXME think carefully about int32 overflows!!
 
-__global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int Nds)
+__global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int Nds, int out_fstride4)
 {
     static constexpr uint ALL_LANES = 0xffffffffU;
     
@@ -133,14 +136,13 @@ __global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int N
     long pl_stride = long(Fds) * long(S >> 2);
 
     // Shift output pointer, including time and laneId.
-    // Before the shifts, 's0' has shape uint4[T/Nds, F, S/4].
-    // After the shifts, 's0' has shape uint4[4] and stride (S/4).
+    // Before the shifts, 's0' has shape ulong4[T/Nds, F, S/4].
+    // After the shifts, 's0' has shape ulong4[4] and stride 'out_fstride4'.
     
     s0 += (sds << 1);
-    s0 += (fds * S);           // (fds << 2) * (S >> 2)
-    s0 += tds * F * (S >> 2);
+    s0 += (fds << 2) * out_fstride4;
+    s0 += tds * F * out_fstride4;
     s0 += (threadIdx.x & 31);  // laneId
-    int s0_stride = (S >> 2);
     
     // [t2_lo:t2_hi) = range of t2 values processed on this warp.
     int t2_lo = tds * (Nds >> 1);
@@ -169,7 +171,7 @@ __global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int N
     s0_x4.w = s0_accum;    
 
     for (int f = 0; f < nf; f++)
-	s0[f * s0_stride] = s0_x4;
+	s0[f * out_fstride4] = s0_x4;
 }
 
 
@@ -181,6 +183,7 @@ __global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int N
 //   long F;                               // number of freq channels
 //   long S;                               // number of stations (= dish+pol pairs)
 //   long Nds;                             // time downsampling factor
+//   long out_fstride;                     // frequency stride in 'S0' array
 //
 // Constraints (checked here)
 //
@@ -188,6 +191,8 @@ __global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int N
 //   - S must be a multiple of 128.
 //   - T must be a multiple of 128.
 //   - T must be a multiple of Nds.
+//   - out_fstride must be a multiple of 4.
+//   - out_fstride must be >= S.
 //
 // Notes on parallelization:
 //
@@ -200,7 +205,7 @@ __global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int N
 //   - Within the larger kernel, the warp mapping is:
 //       wz wy wx <-> (tds) (f/4) (s/128)
 
-void launch_s0_kernel(ulong *s0, const ulong *pl_mask, long T, long F, long S, long Nds, cudaStream_t stream)
+void launch_s0_kernel(ulong *s0, const ulong *pl_mask, long T, long F, long S, long Nds, long out_fstride, cudaStream_t stream)
 {
     if (T <= 0)
 	throw runtime_error("launch_s0_kernel: number of time samples T must be > 0");
@@ -216,6 +221,10 @@ void launch_s0_kernel(ulong *s0, const ulong *pl_mask, long T, long F, long S, l
 	throw runtime_error("launch_s0_kernel: downsampling factor 'Nds' must be positive");
     if (Nds & 1)
 	throw runtime_error("launch_s0_kernel: downsampling factor 'Nds' must be even");
+    if (out_fstride < S)
+	throw runtime_error("launch_s0_kernel(): out_fstride must be >= S");	
+    if (out_fstride % 4)
+	throw runtime_error("launch_s0_kernel(): out_fstride must be a multiple of 4");
 
     long Tds = T / Nds;
     
@@ -226,24 +235,10 @@ void launch_s0_kernel(ulong *s0, const ulong *pl_mask, long T, long F, long S, l
     gputils::assign_kernel_dims(nblocks, nthreads, S >> 2, (F+3) >> 2, Tds);
 
     s0_kernel <<< nblocks, nthreads, 0, stream >>>
-	((ulong4 *) s0, (const uint *) pl_mask, T, F, S, Nds);
+	((ulong4 *) s0, (const uint *) pl_mask, T, F, S, Nds, out_fstride >> 2);
     
     CUDA_PEEK("s0_kernel launch");
 }
-
-
-// Helper for gputils::Array<> version of launch_s0_kernel().
-template<typename T>
-static void check_3d_array(const Array<T> &a, const char *name)
-{
-    if (a.ndim != 3)
-	throw runtime_error("launch_s0_kernel: expected '" + string(name) + "' to be a 3-d array, got shape=" + a.shape_str());
-    if (!a.is_fully_contiguous())
-	throw runtime_error("launch_s0_kernel: array '" + string(name) + "' is not contiguous");
-    if (!a.on_gpu())
-	throw runtime_error("launch_s0_kernel: array '" + string(name) + "' is not on the GPU");
-}
-
 
 // Arguments:
 //
@@ -253,13 +248,17 @@ static void check_3d_array(const Array<T> &a, const char *name)
 
 void launch_s0_kernel(Array<ulong> &s0, const Array<ulong> &pl_mask, long Nds, cudaStream_t stream)
 {
-    check_3d_array(s0, "s0");
-    check_3d_array(pl_mask, "pl_mask");
-
+    // S0 shape = (T/Nds, F, S)
+    // pl_mask shape = (T/128, (F+3)/4, S/8)
+    
+    check_array(s0, "launch_s0_kernel", "S0", 3, false);            // ndim=3, contiguous=false
+    check_array(pl_mask, "launch_s0_kernel", "pl_mask", 3, true);   // ndim=3, contiguous=true
+    
     long Tds = s0.shape[0];
     long F = s0.shape[1];
     long S = s0.shape[2];
-
+    long out_fstride = s0.strides[1];
+    
     long T128 = pl_mask.shape[0];
     long Fds = pl_mask.shape[1];
     long Sds = pl_mask.shape[2];
@@ -267,7 +266,12 @@ void launch_s0_kernel(Array<ulong> &s0, const Array<ulong> &pl_mask, long Nds, c
     if ((Tds*Nds != T128*128) || (Fds != ((F+3)/4)) || (S != (Sds*8)))
 	throw runtime_error("launch_s0_kernel: s0.shape=" + s0.shape_str() + " and pl_mask.shape=" + pl_mask.shape_str() + " are inconsistent");
 
-    launch_s0_kernel(s0.data, pl_mask.data, 128*T128, F, S, Nds, stream);
+    if (s0.strides[2] != 1)
+	throw runtime_error("launch_s012_time_downsample_kernel(): expected innermost (station) axis of S0 to be contiguous");
+    if (s0.strides[0] != F*out_fstride)
+	throw runtime_error("launch_s012_time_downsample_kernel(): expected time+freq axes of S0 to be contiguous");
+
+    launch_s0_kernel(s0.data, pl_mask.data, 128*T128, F, S, Nds, out_fstride, stream);
 }
 
 
