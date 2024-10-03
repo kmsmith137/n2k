@@ -1,5 +1,7 @@
-#include <gputils/cuda_utils.hpp>
 #include "../include/n2k/s012_kernels.hpp"
+#include "../include/n2k/internals.hpp"
+
+#include <gputils/cuda_utils.hpp>
 
 using namespace std;
 using namespace gputils;

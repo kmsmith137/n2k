@@ -15,8 +15,6 @@ using namespace n2k;
 
 static Array<ulong> reference_s0_kernel(const Array<ulong> &pl_mask, long T, long F, long S, long Nds)
 {
-    _check_args(T, F, S, Nds);
-    
     long Tds = T/Nds;
     long Fds = (F+3)/4;
     long Sds = S/8;
@@ -54,7 +52,7 @@ static void test_s0_kernel(const Array<ulong> &pl_mask, long T, long F, long S, 
 {
     stringstream ss;
     ss << "test_s0_kernel(T=" << T << ", F=" << F << ", S=" << S << ", Nds=" << Nds << ", fstride=" << fstride << ")";
-    cout << ss.str() << ": start" << endl;
+    cout << ss.str() << endl;
     
     Array<ulong> s0_ref = reference_s0_kernel(pl_mask, T, F, S, Nds);
     Array<ulong> s0_gpu({T/Nds,F,S}, {F*fstride,fstride,1}, af_gpu | af_guard);
@@ -62,7 +60,6 @@ static void test_s0_kernel(const Array<ulong> &pl_mask, long T, long F, long S, 
     launch_s0_kernel(s0_gpu, pl_mask_gpu, Nds);
     
     gputils::assert_arrays_equal(s0_ref, s0_gpu, "cpu", "gpu", {"tds","f","s"});
-    cout << ss.str() << ": pass" << endl;
 }
 
 
