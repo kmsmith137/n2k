@@ -62,8 +62,10 @@ __device__ __forceinline__ void write_ulong4(ulong *p, ulong a, ulong b, ulong c
 }
 
 __global__ void __launch_bounds__(128, 8)
-s12_kernel(ulong *S12, const uint *E, int Tds, int F, int S, int Nds, int out_fstride)
+s12_kernel(ulong *S12, const uint *E, int Tds, int F, int S, int Nds, int out_fstride, bool offset_encoded)
 {
+    const uint to_offset_encoded = offset_encoded ? 0 : 0x88888888U;
+    
     ulong s1_0, s1_1, s1_2, s1_3, s2_0, s2_1, s2_2, s2_3;
     s1_0 = s1_1 = s1_2 = s1_3 = s2_0 = s2_1 = s2_2 = s2_3 = 0;
 
@@ -85,7 +87,7 @@ s12_kernel(ulong *S12, const uint *E, int Tds, int F, int S, int Nds, int out_fs
     
     for (uint n = 0; n < Nds; n++) {
         // Get 4 stations (packed into one uint32)
-        uint e = E[F*Q*n] ^ 0x88888888U;   // twos complement -> offset encoded
+        uint e = E[F*Q*n] ^ to_offset_encoded;   // offset-encoded
         
         // Unpack uint32 into 4 complex numbers (each with real and imaginary components)
         int e0_re = int(e & 0xf) - 8;
@@ -114,7 +116,7 @@ s12_kernel(ulong *S12, const uint *E, int Tds, int F, int S, int Nds, int out_fs
 }
 
 
-void launch_s12_kernel(ulong *S12, const uint8_t *E, long T, long F, long S, long Nds, long out_fstride, cudaStream_t stream)
+void launch_s12_kernel(ulong *S12, const uint8_t *E, long T, long F, long S, long Nds, long out_fstride, bool offset_encoded, cudaStream_t stream)
 {
     // ulong    S12[T/Tds][F][2][S];
     // uint4+4  E[T][F][S];
@@ -148,14 +150,14 @@ void launch_s12_kernel(ulong *S12, const uint8_t *E, long T, long F, long S, lon
     gputils::assign_kernel_dims(nblocks, nthreads, S/4, F, Tds);
     
     s12_kernel <<< nblocks, nthreads, 0, stream >>>
-	(S12, (const uint *) E, Tds, F, S, Nds, out_fstride);
+	(S12, (const uint *) E, Tds, F, S, Nds, out_fstride, offset_encoded);
 
     CUDA_PEEK("s12 kernel launch");
 }
 
 
 
-void launch_s12_kernel(Array<ulong> &S12, const Array<uint8_t> &E, long Nds, cudaStream_t stream)
+void launch_s12_kernel(Array<ulong> &S12, const Array<uint8_t> &E, long Nds, bool offset_encoded, cudaStream_t stream)
 {
     // ulong    S12[T/Tds][F][2][S];
     // uint4+4  E[T][F][S];
@@ -182,7 +184,7 @@ void launch_s12_kernel(Array<ulong> &S12, const Array<uint8_t> &E, long Nds, cud
     if (S12.strides[0] != F*out_fstride)
 	throw runtime_error("launch_s012_time_downsample_kernel(): expected time+freq axes of S12 to be contiguous");
 
-    launch_s12_kernel(S12.data, E.data, T, F, S, Nds, out_fstride, stream);
+    launch_s12_kernel(S12.data, E.data, T, F, S, Nds, out_fstride, offset_encoded, stream);
 }
 
 

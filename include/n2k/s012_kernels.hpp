@@ -125,6 +125,7 @@ extern void launch_s12_kernel(
     long S,               // number of stations (= 2*D, where D is number of dishes)
     long Nds,             // time downsampling factor
     long out_fstride,     // frequency stride in 'S12' array, see comment above.
+    bool offset_encoded,  // toggle between twos-complement/offset-encoded int4s
     cudaStream_t stream=0);
 
 
@@ -135,6 +136,7 @@ extern void launch_s12_kernel(
     gputils::Array<ulong> &S12,         // output array, shape (T/Nds, F, 2, S)
     const gputils::Array<uint8_t> &E,   // input int4+4 array, shape (T, F, S)
     long Nds,                           // time downsampling factor
+    bool offset_encoded,                // toggle between twos-complement/offset-encoded int4s
     cudaStream_t stream=0);
 
 

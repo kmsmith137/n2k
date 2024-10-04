@@ -55,15 +55,17 @@ Array<complex<int>> make_random_unpacked_e_array(int T, int F, int S)
 }
 
 
-Array<complex<int>> unpack_e_array(const Array<uint8_t> &E_in)
+Array<complex<int>> unpack_e_array(const Array<uint8_t> &E_in, bool offset_encoded)
 {
+    const uint8_t to_offset_encoded = offset_encoded ? 0 : 0x88;
+    
     assert(E_in.on_host());
     assert(E_in.is_fully_contiguous());
 
     Array<complex<int>> E_out(E_in.ndim, E_in.shape, af_uhost);
 
     for (long i = 0; i < E_in.size; i++) {
-	uint8_t e = E_in.data[i] ^ 0x88;   // twos complement -> offset-encode
+	uint8_t e = E_in.data[i] ^ to_offset_encoded;
 	int e_re = int(e & 0xf) - 8;
 	int e_im = int((e >> 4) & 0xf) - 8;       
 	E_out.data[i] = { e_re, e_im };
@@ -73,8 +75,10 @@ Array<complex<int>> unpack_e_array(const Array<uint8_t> &E_in)
 }
 
 
-Array<uint8_t> pack_e_array(const Array<complex<int>> &E_in)
+Array<uint8_t> pack_e_array(const Array<complex<int>> &E_in, bool offset_encoded)
 {
+    const uint8_t from_twos_complement = offset_encoded ? 0x88 : 0;
+    
     assert(E_in.on_host());
     assert(E_in.is_fully_contiguous());
 
@@ -83,7 +87,7 @@ Array<uint8_t> pack_e_array(const Array<complex<int>> &E_in)
     for (long i = 0; i < E_in.size; i++) {
 	uint8_t e_re = E_in.data[i].real() & 0xf;
 	uint8_t e_im = E_in.data[i].imag() & 0xf;
-	E_out.data[i] = (e_re) | (e_im << 4);
+	E_out.data[i] = ((e_re) | (e_im << 4)) ^ from_twos_complement;
     }
 
     return E_out;

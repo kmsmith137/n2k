@@ -54,6 +54,7 @@ static void time_s12_kernel(const TimingParams &tp)
 {
     const long ninner = 100;
     const long nouter = 10;
+    const bool offset_encoded = true;
     
     long T = tp.T;
     long F = tp.F;
@@ -69,7 +70,7 @@ static void time_s12_kernel(const TimingParams &tp)
     auto callback = [&](const CudaStreamPool &pool, cudaStream_t stream, int istream)
     {
 	for (int i = 0; i < ninner; i++)
-	    launch_s12_kernel(S12, E, Nds, stream);  // calls CUDA_PEEK()
+	    launch_s12_kernel(S12, E, Nds, offset_encoded, stream);  // calls CUDA_PEEK()
     };
 
     CudaStreamPool sp(callback, nouter, 1, name);

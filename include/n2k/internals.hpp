@@ -14,8 +14,8 @@ namespace n2k {
 
 
 extern gputils::Array<std::complex<int>> make_random_unpacked_e_array(int T, int F, int S);       // returns shape (T,F,S,2)
-extern gputils::Array<std::complex<int>> unpack_e_array(const gputils::Array<uint8_t> &E_in);     // shape-preserving
-extern gputils::Array<uint8_t> pack_e_array(const gputils::Array<std::complex<int>> &E_in);       // shape-preserving
+extern gputils::Array<std::complex<int>> unpack_e_array(const gputils::Array<uint8_t> &E_in, bool offset_encoded);     // shape-preserving
+extern gputils::Array<uint8_t> pack_e_array(const gputils::Array<std::complex<int>> &E_in, bool offset_encoded);       // shape-preserving
 
 extern gputils::Array<ulong> make_random_s012_array(int T, int F, int S);   // returns shape (T,F,3,S)
 extern gputils::Array<uint8_t> make_random_bad_feed_mask(int S);            // returns shape (S,)

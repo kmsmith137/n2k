@@ -19,13 +19,14 @@ using namespace gputils;
 // test_pack_e_array()
 
 
-static void test_pack_e_array(int T, int F, int S)
+static void test_pack_e_array(int T, int F, int S, bool offset_encoded)
 {
-    cout << "test_pack_e_array: T=" << T << ", F=" << F << ", S=" << S << endl;
+    cout << "test_pack_e_array: T=" << T << ", F=" << F << ", S=" << S
+	 << ", offset_encoded=" << offset_encoded << endl;
     
     Array<complex<int>> E_src = make_random_unpacked_e_array(T,F,S);
-    Array<uint8_t> E_packed = pack_e_array(E_src);
-    Array<complex<int>> E_dst = unpack_e_array(E_packed);
+    Array<uint8_t> E_packed = pack_e_array(E_src, offset_encoded);
+    Array<complex<int>> E_dst = unpack_e_array(E_packed, offset_encoded);
 
     assert_arrays_equal(E_src, E_dst, "E_src", "E_dst", {"t","f","s"});
 }
@@ -468,7 +469,8 @@ static void test_gpu_interpolation()
 
 int main(int argc, char **argv)
 {
-    test_pack_e_array(16, 32, 128);
+    test_pack_e_array(16, 32, 128, false);  // offset_encoded=false
+    test_pack_e_array(16, 32, 128, true);   // offset_encoded=true
     test_transpose_bit_with_lane();
     test_bad_feed_mask();
     test_cubic_interpolate();
