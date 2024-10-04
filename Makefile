@@ -73,7 +73,6 @@ LIBFILES = \
 
 XFILES = \
   bin/test-correlator \
-  bin/time-correlator \
   bin/test-helper-functions \
   bin/test-s0-kernel \
   bin/test-s012-station-downsample \
@@ -81,6 +80,8 @@ XFILES = \
   bin/test-s12-kernel \
   bin/test-sk-bias \
   bin/test-sk-kernel \
+  bin/time-correlator \
+  bin/time-rfi-kernels \
   bin/scratch
 
 # Used in 'make clean', 'make source_files.txt'
