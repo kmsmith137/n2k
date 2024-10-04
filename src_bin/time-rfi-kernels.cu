@@ -17,6 +17,7 @@ struct TimingParams
     long S = 0;
     long Nds1 = 0;
     long Nds2 = 0;
+    float baseband_dt = 0.0;  // seconds
 };
 
 
@@ -44,6 +45,7 @@ static void time_s0_kernel(const TimingParams &tp)
 
     CudaStreamPool sp(callback, nouter, 1, name);
     sp.monitor_throughput("Global memory BW (GB/s)", gb);
+    sp.monitor_time("Real-time fraction", ninner * tp.T * tp.baseband_dt);
     sp.run();
 }
 
@@ -72,6 +74,7 @@ static void time_s12_kernel(const TimingParams &tp)
 
     CudaStreamPool sp(callback, nouter, 1, name);
     sp.monitor_throughput("Global memory BW (GB/s)", gb);
+    sp.monitor_time("Real-time fraction", ninner * tp.T * tp.baseband_dt);
     sp.run();
 }
 
@@ -100,6 +103,7 @@ static void time_s012_time_downsample(const TimingParams &tp)
 
     CudaStreamPool sp(callback, nouter, 1, name);
     sp.monitor_throughput("Global memory BW (GB/s)", gb);
+    sp.monitor_time("Real-time fraction", ninner * tp.T * tp.baseband_dt);
     sp.run();
 }
 
@@ -128,6 +132,7 @@ static void time_s012_station_downsample(const TimingParams &tp)
 
     CudaStreamPool sp(callback, nouter, 1, name);
     sp.monitor_throughput("Global memory BW (GB/s)", gb);
+    sp.monitor_time("Real-time fraction", ninner * tp.T * tp.baseband_dt);
     sp.run();
 }
 
@@ -178,6 +183,7 @@ static void time_sk_kernel(const TimingParams &tp, bool first_flag)
     
     CudaStreamPool sp(callback, nouter, 1, name);
     sp.monitor_throughput("Global memory BW (GB/s)", gb);
+    sp.monitor_time("Real-time fraction", ninner * tp.T * tp.baseband_dt);
     sp.run();
 }
 
@@ -195,6 +201,18 @@ static void time_all(const TimingParams &tp)
 
 int main(int argc, char **argv)
 {
+    const double chord_dt = 8192 / 1.5e9;
+    
+    TimingParams tp_chord_pathfinder;
+    tp_chord_pathfinder.name = "CHORD pathfinder";
+    tp_chord_pathfinder.T = 128 * 48 * 8;
+    tp_chord_pathfinder.F = 410;
+    tp_chord_pathfinder.S = 128;
+    tp_chord_pathfinder.Nds1 = 128;
+    tp_chord_pathfinder.Nds2 = 48;
+    tp_chord_pathfinder.baseband_dt = chord_dt;
+    time_all(tp_chord_pathfinder);
+
     TimingParams tp_full_chord;
     tp_full_chord.name = "Full CHORD";
     tp_full_chord.T = 128 * 48 * 8;
@@ -202,6 +220,7 @@ int main(int argc, char **argv)
     tp_full_chord.S = 1024;
     tp_full_chord.Nds1 = 128;
     tp_full_chord.Nds2 = 48;
+    tp_full_chord.baseband_dt = chord_dt;
     time_all(tp_full_chord);
     
     return 0;
