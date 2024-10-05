@@ -73,13 +73,8 @@ LIBFILES = \
 
 XFILES = \
   bin/test-correlator \
-  bin/test-helper-functions \
-  bin/test-s0-kernel \
-  bin/test-s012-station-downsample \
-  bin/test-s012-time-downsample \
-  bin/test-s12-kernel \
+  bin/test-rfi-kernels \
   bin/test-sk-bias \
-  bin/test-sk-kernel \
   bin/time-correlator \
   bin/time-rfi-kernels \
   bin/scratch
