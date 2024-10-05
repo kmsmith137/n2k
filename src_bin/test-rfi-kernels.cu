@@ -15,6 +15,38 @@ using namespace n2k;
 using namespace gputils;
 
 
+
+// FIXME improve!
+static Array<ulong> make_random_s012_array(int T, int F, int S)
+{
+    std::mt19937 &rng = gputils::default_rng;
+    auto dist = std::uniform_int_distribution<uint>(0, 1000);
+
+    Array<ulong> ret({T,F,3,S}, af_rhost);
+    for (long i = 0; i < ret.size; i++)
+	ret.data[i] = dist(rng);
+
+    return ret;
+}
+
+
+static Array<uint8_t> make_random_bad_feed_mask(int S)
+{
+    assert(S > 0);
+    assert(S < 32*1024);   // FIXME should be a global somewhere
+    assert(S % 128 == 0);  // assumed by load_bad_feed_mask()
+    
+    std::mt19937 &rng = gputils::default_rng;
+    auto dist = std::uniform_int_distribution<uint8_t>(0,1);
+
+    Array<uint8_t> ret({S}, af_rhost);
+    for (long i = 0; i < S; i++)
+	ret.data[i] = dist(rng);
+
+    return ret;
+}
+
+
 // -------------------------------------------------------------------------------------------------
 //
 // test_pack_e_array()
