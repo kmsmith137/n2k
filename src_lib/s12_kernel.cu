@@ -171,18 +171,18 @@ void launch_s12_kernel(Array<ulong> &S12, const Array<uint8_t> &E, long Nds, boo
     long out_fstride = S12.strides[1];
 
     if (S12.shape[0] * Nds != E.shape[0])
-	throw runtime_error("launch_s012_time_downsample_kernel(): inconsistent number of time samples in S12 and E arrays");
+	throw runtime_error("launch_s12_kernel(): inconsistent number of time samples in S12 and E arrays");
     if (S12.shape[1] != E.shape[1])
-	throw runtime_error("launch_s012_time_downsample_kernel(): inconsistent number of frequency channels in S12 and E arrays");
+	throw runtime_error("launch_s12_kernel(): inconsistent number of frequency channels in S12 and E arrays");
     if (S12.shape[2] != 2)
-	throw runtime_error("launch_s012_time_downsample_kernel(): expected axis 2 of S12 array to have length 2");
+	throw runtime_error("launch_s12_kernel(): expected axis 2 of S12 array to have length 2");
     if (S12.shape[3] != E.shape[2])
-	throw runtime_error("launch_s012_time_downsample_kernel(): inconsistent number of stations in S12 and E arrays");
+	throw runtime_error("launch_s12_kernel(): inconsistent number of stations in S12 and E arrays");
     
     if ((S12.strides[2] != S) || (S12.strides[3] != 1))
-	throw runtime_error("launch_s012_time_downsample_kernel(): expected inner two axes (with shape (2,S)) of S12 array to be contiguous");
+	throw runtime_error("launch_s12_kernel(): expected inner two axes (with shape (2,S)) of S12 array to be contiguous");
     if (S12.strides[0] != F*out_fstride)
-	throw runtime_error("launch_s012_time_downsample_kernel(): expected time+freq axes of S12 to be contiguous");
+	throw runtime_error("launch_s12_kernel(): expected time+freq axes of S12 to be contiguous");
 
     launch_s12_kernel(S12.data, E.data, T, F, S, Nds, out_fstride, offset_encoded, stream);
 }

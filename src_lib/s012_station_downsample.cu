@@ -176,18 +176,18 @@ void launch_s012_station_downsample_kernel(ulong *Sout, const ulong *Sin, const 
 
 void launch_s012_station_downsample_kernel(Array<ulong> &Sout, const Array<ulong> &Sin, const Array<uint8_t> &bf_mask, cudaStream_t stream)
 {
-    check_array(Sout, "launch_s012_time_downsample_kernel", "Sout", 3, true);          // ndim=3, contiguous=true
-    check_array(Sin, "launch_s012_time_downsample_kernel", "Sin", 4, true);            // ndim=4, contiguous=true
-    check_array(bf_mask, "launch_s012_time_downsample_kernel", "bf_mask", 1, true);    // ndim=1, contiguous=true
+    check_array(Sout, "launch_s012_station_downsample_kernel", "Sout", 3, true);          // ndim=3, contiguous=true
+    check_array(Sin, "launch_s012_station_downsample_kernel", "Sin", 4, true);            // ndim=4, contiguous=true
+    check_array(bf_mask, "launch_s012_station_downsample_kernel", "bf_mask", 1, true);    // ndim=1, contiguous=true
 
     if (Sin.shape[0] != Sout.shape[0])
 	throw runtime_error("launch_s012_station_downsample_kernel(): inconsistent number of time samples in input/output S012 arrays");
     if (Sin.shape[1] != Sout.shape[1])
 	throw runtime_error("launch_s012_station_downsample_kernel(): inconsistent number of frequency channels in input/output S012 arrays");
     if (Sout.shape[2] != 3)
-	throw runtime_error("launch_s012_time_downsample_kernel(): expected Sout.shape[2] == 3");
+	throw runtime_error("launch_s012_station_downsample_kernel(): expected Sout.shape[2] == 3");
     if (Sin.shape[2] != 3)
-	throw runtime_error("launch_s012_time_downsample_kernel(): expected Sin.shape[2] == 3");
+	throw runtime_error("launch_s012_station_downsample_kernel(): expected Sin.shape[2] == 3");
     if (Sin.shape[3] != bf_mask.shape[0])
 	throw runtime_error("launch_s012_station_downsample_kernel(): inconsistent number of stations in S012 arrays and bad feed mask");
 

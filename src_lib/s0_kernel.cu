@@ -266,12 +266,12 @@ void launch_s0_kernel(Array<ulong> &s0, const Array<ulong> &pl_mask, long Nds, c
     long Sds = pl_mask.shape[2];
 
     if ((Tds*Nds != T128*128) || (Fds != ((F+3)/4)) || (S != (Sds*8)))
-	throw runtime_error("launch_s0_kernel: s0.shape=" + s0.shape_str() + " and pl_mask.shape=" + pl_mask.shape_str() + " are inconsistent");
+	throw runtime_error("launch_s0_kernel(): s0.shape=" + s0.shape_str() + " and pl_mask.shape=" + pl_mask.shape_str() + " are inconsistent");
 
     if (s0.strides[2] != 1)
-	throw runtime_error("launch_s012_time_downsample_kernel(): expected innermost (station) axis of S0 to be contiguous");
+	throw runtime_error("launch_s0_kernel(): expected innermost (station) axis of S0 to be contiguous");
     if (s0.strides[0] != F*out_fstride)
-	throw runtime_error("launch_s012_time_downsample_kernel(): expected time+freq axes of S0 to be contiguous");
+	throw runtime_error("launch_s0_kernel(): expected time+freq axes of S0 to be contiguous");
 
     launch_s0_kernel(s0.data, pl_mask.data, 128*T128, F, S, Nds, out_fstride, stream);
 }
