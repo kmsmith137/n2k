@@ -107,7 +107,7 @@ __global__ void sk_kernel(
     const uint Nbf = max(S,1024) >> 5;   // see include/n2k/bad_feed_mask.hpp
     
     uint *shmem_bf = shmem_base;
-    float *shmem_red = (float *) (shmem_bf + Nbf);
+    float *shmem_red = (float *) (shmem_bf + bf_mask_shmem_nelts(S));
     uint *shmem_rfi = (uint *) (shmem_red + 4*Ws*Wf*Wt);
     float *shmem_bsigma_coeffs = (float *) (shmem_rfi + 32);
 
@@ -527,7 +527,10 @@ void SkKernel::launch(
     // Shared memory size.
     constexpr int bnx = sk_globals::bias_nx;
     constexpr int snx = sk_globals::sigma_nx;
-    uint shmem_nbytes = 4*max(S/32,32L) + 16*Wt*Wf*Ws + 128 + 48*bnx + 36*snx;
+    uint shmem_nbytes = bf_mask_shmem_nbytes(S,Ws);
+    shmem_nbytes += 16*Ws*Wt*Wf;   // 'shmem_red' has shape (Ws,Wt,Wf,4) and dtype float
+    shmem_nbytes += 4*32;          // 'shmem_rfimask' has shape (32,) and dtype uint
+    shmem_nbytes += 48*bnx + 36*snx;
 
     // Launch kernel!
     sk_kernel<<< {1,Bf,Bt}, {32*Ws,Wf,Wt}, shmem_nbytes, stream >>>

@@ -31,12 +31,29 @@ namespace n2k {
 // Assumptions (caller must check):
 //
 //   - Number of stations S is a multiple of 128.
-//   - Number of stations S is >= 32 * blockDim.x.
+//   - Number of stations S is <= 32 * blockDim.x.
 //
 // The 'sp' pointer should point to a shared memory buffer of length max(S/32,32).
 // WARNING: caller must call __syncthreads() before shared memory 'sp' can be re-used!
 
 
+__host__ __device__ inline uint bf_mask_shmem_nelts(int S)
+{
+    return (S > 1024) ? (S >> 5) : 32;
+}
+
+
+__host__ inline uint bf_mask_shmem_nbytes(int S, int Wx)
+{
+    assert(S > 0);
+    assert(S <= 1024*Wx);
+    assert((S % 128) == 0);
+    
+    return 4 * bf_mask_shmem_nelts(S);
+}
+
+
+template<bool Debug = false>
 __device__ inline uint load_bad_feed_mask(const uint *bf_mask, uint *sp, int S)
 {
     uint t0 = threadIdx.z;
@@ -54,10 +71,13 @@ __device__ inline uint load_bad_feed_mask(const uint *bf_mask, uint *sp, int S)
 	x = transpose_bit_with_lane<4> (x, 4);   // s0 s1 s2 s3 s4 s5 s6 <-> b3 b4 b0 b1 b2 t3 t4
 
 	// Shared memory layout:
-	// Define s = 32*shi + slo
-	// FIXME for now use shi -- fix bank conflict later.
+	// Define s = 32*shi + slo, and store at shmem[shi].	
+	// FIXME (low-priority) creates a bank conflict if S > 1024, but I doubt this is ever a bottleneck.
 
 	uint shi = t >> 3;
+	
+	if constexpr (Debug)
+	    assert(shi < bf_mask_shmem_nelts(S));
 	
 	if ((threadIdx.x & 7) == 0)
 	    sp[shi] = x;
@@ -72,9 +92,6 @@ __device__ inline uint load_bad_feed_mask(const uint *bf_mask, uint *sp, int S)
     // We read the mask from shared memory as: (bits <-> i), (threads <-> j)
     // And then transpose to: (bits <-> j), (threads <-> i).
     
-    // FIXME optimize for case (blockDim.x * blockDim.y) > 1.
-    // FIXME optimize for case where we don't need all the transposes.
-    
     uint t01 = threadIdx.x & 3;
     uint t234 = threadIdx.x & 28;
     uint j = (t01 << 3) | (t234 >> 2);         // j0 j1 j2 j3 j4 <-> t2 t3 t4 t0 t1
@@ -82,12 +99,18 @@ __device__ inline uint load_bad_feed_mask(const uint *bf_mask, uint *sp, int S)
     uint shi = s >> 5;
     shi = (s < S) ? shi : (shi & 31);
 
+    if constexpr (Debug)
+	assert(shi < bf_mask_shmem_nelts(S));
+    
+    // FIXME (low-priority) optimize for case where we don't need all the transposes.
+    
     uint y = sp[shi];
     y = transpose_bit_with_lane<1> (y, 4);     // i0 i1 i2 i3 i4 <-> b3 b4 t2 b1 b2     j0 j1 j2 j3 j4 <-> b0 t3 t4 t0 t1
     y = transpose_bit_with_lane<2> (y, 8);     // i0 i1 i2 i3 i4 <-> b3 b4 t2 t3 b2     j0 j1 j2 j3 j4 <-> b0 b1 t4 t0 t1
     y = transpose_bit_with_lane<4> (y, 16);    // i0 i1 i2 i3 i4 <-> b3 b4 t2 t3 t4     j0 j1 j2 j3 j4 <-> b0 b1 b2 t0 t1
     y = transpose_bit_with_lane<8> (y, 1);     // i0 i1 i2 i3 i4 <-> t0 b4 t2 t3 t4     j0 j1 j2 j3 j4 <-> b0 b1 b2 b3 t1
     y = transpose_bit_with_lane<16> (y, 2);    // i0 i1 i2 i3 i4 <-> t0 t1 t2 t3 t4     j0 j1 j2 j3 j4 <-> b0 b1 b2 b3 b4
+    
     return y;
 }
 

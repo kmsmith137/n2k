@@ -108,8 +108,8 @@ __global__ void s012_station_downsample_kernel(ulong *Sout, const ulong *Sin, co
 
     // Shared memory layout.
     extern __shared__ uint shmem[];
-    uint *shmem_bf = shmem;                              // length 32 * Wx
-    ulong *shmem_red = (ulong *) (shmem + blockDim.x);   // shape (Wx, Wy, N)
+    uint *shmem_bf = shmem;
+    ulong *shmem_red = (ulong *) (shmem + bf_mask_shmem_nelts(S));   // shape (Wx, Wy, N)
 
     // No syncthreads() needed after load_bad_feed_mask(), since 'shmem_bf' is not re-used.
     int m = 32*blockIdx.x + N*threadIdx.y;
@@ -153,7 +153,8 @@ void launch_s012_station_downsample_kernel(ulong *Sout, const ulong *Sin, const 
 
     uint Wx = (S+1023) / 1024;
     int nblocks = (M+31) / 32;
-    int shmem_nbytes = 384 * Wx;
+    int shmem_nbytes = bf_mask_shmem_nbytes(S,Wx);
+    shmem_nbytes += (8*32*Wx);   // 'shmem_red' array has shape (Wx,Wy,32/Wy) and dtype ulong
 
     if (Wx == 1)       // use Wy=4
 	s012_station_downsample_kernel<4> <<< nblocks, {32*Wx,4}, shmem_nbytes, stream >>> 

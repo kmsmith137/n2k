@@ -162,7 +162,7 @@ __global__ void bad_feed_mask_kernel(uint *out, const uint8_t *bf_mask, int S)
     __syncthreads();
 #endif
 
-    out[t0] = load_bad_feed_mask((const uint *) bf_mask, shmem, S);
+    out[t0] = load_bad_feed_mask<true> ((const uint *) bf_mask, shmem, S);  // Debug=true
 }
 
 
@@ -170,12 +170,8 @@ static void test_bad_feed_mask(int S, uint Wx, uint Wy, uint Wz)
 {
     cout << "test_bad_feed_mask: S=" << S << ", Wx=" << Wx << ", Wy=" << Wy << ", Wz=" <<  Wz << endl;
     
-    assert(S > 0);
-    assert(S <= 1024*Wx);
-    assert((S % 128) == 0);
-    
     int nt = 32 * Wx * Wy * Wz;
-    int shmem_nbytes = 4 * max(S/32,32);
+    int shmem_nbytes = bf_mask_shmem_nbytes(S, Wx);   // contains asserts on (S,Wx)
     
     Array<uint8_t> bf_mask = make_random_bad_feed_mask(S);
     Array<uint> out({nt}, af_gpu);
@@ -206,10 +202,10 @@ static void test_bad_feed_mask(int S, uint Wx, uint Wy, uint Wz)
 
 static void test_bad_feed_mask()
 {
-    for (int i = 0; i < 100; i++) {
-	vector<ssize_t> W = random_integers_with_bounded_product(3, 32);
-	int m = 8 * min(W[0],4L);
-	int S = 128 * rand_int(1,m+1);
+    for (int n = 0; n < 500; n++) {
+	vector<ssize_t> W = random_integers_with_bounded_product(3, 32);  // (Wx, Wy, Wz)
+	int Smax = 1024 * W[0];
+	int S = 128 * rand_int(1, Smax/128 + 1);
 	test_bad_feed_mask(S, W[0], W[1], W[2]);
     }
 }
