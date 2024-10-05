@@ -11,6 +11,12 @@ make -j
 ./test-correlator
 ```
 
+The n2k library contains:
+
+  - An int4+4 GPU visibility matrix kernel with a boolean RFI mask.
+
+  - GPU kernels which implement the high-speed RFI masking logic in CHIME/CHORD.
+
 Some loose ends that I might fix later. Let me know if you'd like me to prioritize any of these.
 See `n2k.hpp` for more info:
 
