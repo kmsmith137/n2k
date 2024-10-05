@@ -74,9 +74,9 @@ LIBFILES = \
 XFILES = \
   bin/test-correlator \
   bin/test-rfi-kernels \
-  bin/test-sk-bias \
   bin/time-correlator \
   bin/time-rfi-kernels \
+  bin/run-rfi-mcs \
   bin/scratch
 
 # Used in 'make clean', 'make source_files.txt'
