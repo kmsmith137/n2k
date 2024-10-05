@@ -11,6 +11,7 @@ namespace n2k {
 }  // editor auto-indent
 #endif
 
+
 // load_bad_feed_mask()
 //
 // Idea: we want to loop over stations 0, 1, ..., (S-1) as follows (*)
@@ -47,7 +48,7 @@ __device__ inline uint load_bad_feed_mask(const uint *bf_mask, uint *sp, int S)
     // In each iteration of the loop, we read 128 stations.
     
     for (uint t = t0; t < (S>>2); t += nt) {
-	uint x = bf_mask[t];                     // s0 s1 s2 s3 s4 s5 s6 <-> b3 b4 t0 t1 t2 t3 t4
+	uint x = __vcmpne4(bf_mask[t], 0);       // s0 s1 s2 s3 s4 s5 s6 <-> b3 b4 t0 t1 t2 t3 t4
 	x = transpose_bit_with_lane<1> (x, 1);   // s0 s1 s2 s3 s4 s5 s6 <-> b3 b4 b0 t1 t2 t3 t4
 	x = transpose_bit_with_lane<2> (x, 2);   // s0 s1 s2 s3 s4 s5 s6 <-> b3 b4 b0 b1 t2 t3 t4
 	x = transpose_bit_with_lane<4> (x, 4);   // s0 s1 s2 s3 s4 s5 s6 <-> b3 b4 b0 b1 b2 t3 t4

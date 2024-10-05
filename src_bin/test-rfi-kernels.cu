@@ -36,13 +36,11 @@ static Array<uint8_t> make_random_bad_feed_mask(int S)
     assert(S < 32*1024);   // FIXME should be a global somewhere
     assert(S % 128 == 0);  // assumed by load_bad_feed_mask()
     
-    std::mt19937 &rng = gputils::default_rng;
-    auto dist = std::uniform_int_distribution<uint8_t>(0,1);
-
     Array<uint8_t> ret({S}, af_rhost);
+    
     for (long i = 0; i < S; i++)
-	ret.data[i] = dist(rng);
-
+	ret.data[i] = max(0L, rand_int(-256,256));
+    
     return ret;
 }
 
@@ -168,30 +166,18 @@ __global__ void bad_feed_mask_kernel(uint *out, const uint8_t *bf_mask, int S)
 }
 
 
-static void test_bad_feed_mask(int S, uint Wx, uint Wy, uint Wz, int s0=-1)
+static void test_bad_feed_mask(int S, uint Wx, uint Wy, uint Wz)
 {
-    cout << "test_bad_feed_mask: S=" << S << ", Wx=" << Wx << ", Wy=" << Wy << ", Wz=" <<  Wz;
-    if (s0 >= 0)
-	cout << ", s0=" << s0;
-    cout << endl;
+    cout << "test_bad_feed_mask: S=" << S << ", Wx=" << Wx << ", Wy=" << Wy << ", Wz=" <<  Wz << endl;
     
     assert(S > 0);
     assert(S <= 1024*Wx);
     assert((S % 128) == 0);
     
-    Array<uint8_t> bf_mask({S}, af_rhost | af_zero);
-
-    if (s0 >= 0) {
-	assert(s0 < S);
-	bf_mask.data[s0] = 1;
-    }
-    else {
-	for (int s = 0; s < S; s++)
-	    bf_mask.data[s] = rand_int(0,2);
-    }
-
     int nt = 32 * Wx * Wy * Wz;
     int shmem_nbytes = 4 * max(S/32,32);
+    
+    Array<uint8_t> bf_mask = make_random_bad_feed_mask(S);
     Array<uint> out({nt}, af_gpu);
     
     Array<uint8_t> bf_gpu = bf_mask.to_gpu();
@@ -203,7 +189,7 @@ static void test_bad_feed_mask(int S, uint Wx, uint Wy, uint Wz, int s0=-1)
 	for (uint ix = 0; ix < 32*Wx; ix++) {
 	    int bit = 0;
 	    for (int s = ix; s < S; s += 32*Wx) {
-		bool bf_cpu = bf_mask.data[s];
+		bool bf_cpu = (bf_mask.data[s] != 0);
 		bool bf_gpu = out.data[ix] & (1U << bit);
 		
 		if (bf_cpu != bf_gpu) {
@@ -837,15 +823,9 @@ struct TestInstance
     // Helper function called by constructor.
     void _init_bad_feed_mask()
     {
-	// We mask up to 5% of the stations.
-	
+	// We mask ~5% of the stations.
 	for (int s = 0; s < S; s++)
-	    in_bf_mask.at({s}) = 1;
-	
-	for (int i = 0; i < S/20; i++) {
-	    int s = rand_int(0, S);
-	    in_bf_mask.at({s}) = 0;
-	}
+	    in_bf_mask.at({s}) = rand_int(0, 21);
     }
 
 
