@@ -222,8 +222,13 @@ struct CorrelatorKernel
 	// but this turned out to make the kernel slightly slower.
 	
 	#pragma unroll
-	for (int i = 0; i < 8; i++)
-	    pf_out[i] = gp[i*TS];   // FIXME use wide load instructions!
+	for (int i = 0; i < 8; i++) {
+	    // FIXME use wide load instructions!
+	    if constexpr (CorrelatorParams::offset_encoded)
+		pf_out[i] = gp[i*TS] ^ 0x88888888;
+	    else
+		pf_out[i] = gp[i*TS];
+	}
 	
 	return gp + (32*TS);
     }

@@ -4,6 +4,7 @@
 
 #include "../include/n2k/Correlator.hpp"
 #include "../include/n2k/CorrelatorKernel.hpp"
+#include "../include/n2k/internals.hpp"
 
 using namespace std;
 using namespace gputils;
@@ -12,129 +13,36 @@ using namespace n2k;
 
 // -------------------------------------------------------------------------------------------------
 //
-// unpack_4bit(), pack_4bit()
-// FIXME phase out, in favor of {pack,unpack}_e_array() defined in internals.cu.
+// Test negate_4bit()
 
 
-// Slow, intended only for testing!
-// Given an array of shape S, unpack int32 -> int4[8] and return an array of shape S+(8,)
-__host__ Array<int> unpack_4bit(const Array<int> &src)
+// Use 1 threadblock.
+__global__ void negate_4bit_test_kernel(int *buf, int nelts)
 {
-    assert(src.ndim >= 1);
-    
-    vector<ssize_t> dst_shape(src.ndim+1, 8);
-    for (int d = 0; d < src.ndim; d++)
-	dst_shape[d] = src.shape[d];
-
-    Array<int> dst(dst_shape, af_rhost);
-
-    for (auto ix = dst.ix_start(); dst.ix_valid(ix); dst.ix_next(ix)) {
-	// Extract 4 bits from x, starting at bit b.
-	int x = src.at(src.ndim, &ix[0]);
-	int b = ix[src.ndim] * 4;
-	dst.at(ix) = (x << (28-b)) >> 28;
-    }
-
-    return dst;
-}
-
-
-// Slow, intended only for testing!
-// Given an array of shape S+(8,), pack int4[8] -> int32 and return an array of shape S.
-__host__ Array<int> pack_4bit(const Array<int> &src)
-{
-    assert(src.ndim >= 2);
-    assert(src.shape[src.ndim-1] == 8);
-
-    Array<int> dst(src.ndim-1, &src.shape[0], af_rhost | af_zero);
-    
-    for (auto ix = src.ix_start(); src.ix_valid(ix); src.ix_next(ix)) {
-	// Extract 4 bits from x, starting at bit b.
-	int x = src.at(ix);
-	int b = ix[src.ndim-1] * 4;
-	
-	assert ((x >= -8) && (x <= 7));
-	dst.at(dst.ndim, &ix[0]) |= ((x & 0xf) << b);
-    }
-
-    return dst;
-}
-
-
-__host__ void test_pack_unpack()
-{
-    int n = 100;
-    Array<int> a({n}, af_rhost | af_random);
-    Array<int> b = unpack_4bit(a);
-    Array<int> c = pack_4bit(b);
-    
-    assert(b.shape_equals({n,8}));
-    assert(c.shape_equals({n}));
-
-#if 0
-    for (int i = 0; i < n; i++) {
-	cout << "  test_pack_unpack:";
-	for (int j = 0; j < 8; j++)
-	    cout << "  " << b.at({i,j});
-	cout << "\n";
-    }
-#endif
-
-    for (int i = 0; i < n; i++)
-	assert(a.at({i}) == c.at({i}));
-
-    cout << "test_pack_unpack: pass" << endl;
-}
-
-
-// -------------------------------------------------------------------------------------------------
-//
-// negate_4bit() testing
-
-
-__global__ void negate_4bit_kernel(int *buf, int nsites, int ninner)
-{
-    int threadId = blockIdx.x * blockDim.x + threadIdx.x;
-    int nthreads = gridDim.x * blockDim.x;
-    
-    for (int i = threadId; i < nsites; i += nthreads) {
-	int x = buf[i];
-	int y = 0;
-
-	for (int j = 0; j < ninner; j++) {
-	    x = CorrelatorKernel<128,32>::negate_4bit(x);
-	    y |= x;   // This kludge is needed to prevent the compiler from optimizing away the loop.
-	}
-
-	buf[i] = y;
-    }
+    for (int i = threadIdx.x; i < nelts; i += blockDim.x)
+	buf[i] = CorrelatorKernel<128,32>::negate_4bit(buf[i]);
 }
 
 
 __host__ void test_negate_4bit()
 {
-    const int nsites = 512;
-    
-    // negate_4bit() assumes its 4-bit input values are in the range [-7,8),
-    // i.e. it fails for -8. The loop below generates random input data
-    // satisfying this constraint.
+    const int nelts = 1024*1024;
 
-    Array<int> src({nsites,8}, af_rhost);
-    for (int i = 0; i < nsites; i++)
-	for (int j = 0; j < 8; j++)
-	    src.at({i,j}) = rand_int(-7, 8);
+    Array<complex<int>> src = make_random_unpacked_e_array(nelts,1,1);  // shape (nelts,1,1)
+    src = src.reshape_ref({nelts});                                     // shape (nelts,)
 
-    Array<int> dst = pack_4bit(src).to_gpu();
+    Array<uint8_t> a = pack_e_array(src, false);          // offset_encoded=false
+    a = a.to_gpu();
     
-    negate_4bit_kernel <<<nsites/32, 32>>> (dst.data, nsites, 1);
-    CUDA_PEEK("negate_4bit_kernel (test)");
+    negate_4bit_test_kernel <<<1,1024>>> ((int *) a.data, nelts/4);
+    CUDA_PEEK("negate_4bit_test_kernel");
     CUDA_CALL(cudaDeviceSynchronize());
 
-    dst = unpack_4bit(dst.to_host());
+    a = a.to_host();
+    Array<complex<int>> dst = unpack_e_array(a, false);   // offset_encoded=false
 
-    for (int i = 0; i < nsites; i++)
-	for (int j = 0; j < 8; j++)
-	    assert(dst.at({i,j}) == -src.at({i,j}));
+    for (int i = 0; i < nelts; i++)
+	assert(dst.at({i}) == -src.at({i}));
 
     cout << "test_negate_4bit: pass" << endl;
 }
@@ -142,23 +50,42 @@ __host__ void test_negate_4bit()
 
 // -------------------------------------------------------------------------------------------------
 //
-// transpose_rank8_4bit() testing
+// Test transpose_rank8_4bit()
 
 
-__global__ void transpose_rank8_4bit_kernel(int *buf, int nsites, int ninner)
+static void reference_rank8_4bit_kernel(int *buf, int nelts)
 {
-    int threadId = blockIdx.x * blockDim.x + threadIdx.x;
-    int nthreads = gridDim.x * blockDim.x;
+    assert((nelts % 8) == 0);
+    int m[8][8];
+    
+    for (int i = 0; i < nelts/8; i++) {
+	for (int j = 0; j < 8; j++) {
+	    int x = buf[8*i+j];
+	    for (int k = 0; k < 8; k++)
+		m[j][k] = (x >> (4*k)) & 0xf;
+	}
 
-    for (int i = threadId; i < nsites; i += nthreads) {
+	for (int j = 0; j < 8; j++) {
+	    int y = 0;
+	    for (int k = 0; k < 8; k++)
+		y |= (m[k][j] << (4*k));
+	    buf[8*i+j] = y;
+	}
+    }
+}
+
+
+// Use 1 threadblock and (nelts % 8) == 0
+__global__ void transpose_rank8_4bit_kernel(int *buf, int nelts)
+{
+    for (int i = threadIdx.x; i < nelts/8; i += blockDim.x) {
 	int x[8];
 
 	#pragma unroll
 	for (int j = 0; j < 8; j++)
-	    x[j] = buf[8*i + j];
+	    x[j] = buf[8*i+j];
 
-	for (int j = 0; j < ninner; j++)
-	    CorrelatorKernel<128,32>::transpose_rank8_4bit(x);
+	CorrelatorKernel<128,32>::transpose_rank8_4bit(x);
 
 	#pragma unroll
 	for (int j = 0; j < 8; j++)
@@ -169,23 +96,29 @@ __global__ void transpose_rank8_4bit_kernel(int *buf, int nsites, int ninner)
 
 __host__ void test_transpose_rank8_4bit()
 {
-    const int nsites = 512;
+    const int nelts = 1024;
 
-    Array<int> a({nsites,8}, af_rhost | af_random);
-    Array<int> src = unpack_4bit(a);
-    
-    a = a.to_gpu();
-    transpose_rank8_4bit_kernel <<<nsites/32, 32>>> (a.data, nsites, 1);
+    Array<int> src_cpu({nelts}, af_rhost);
+
+    for (int i = 0; i < nelts; i++) {
+	// Make 32 random bits.
+	uint x = gputils::default_rng();
+	uint y = gputils::default_rng();
+	src_cpu.data[i] = x ^ (y << 16);
+    }
+
+    Array<int> dst_cpu = src_cpu.clone();
+    reference_rank8_4bit_kernel(dst_cpu.data, nelts);
+
+    Array<int> a = src_cpu.to_gpu();
+    transpose_rank8_4bit_kernel <<< 1, 1024 >>> (a.data, nelts);
     CUDA_PEEK("transpose_rank8_4bit_kernel");
     CUDA_CALL(cudaDeviceSynchronize());
-    
-    a = a.to_host();
-    Array<int> dst = unpack_4bit(a);
 
-    for (int i = 0; i < nsites; i++)
-	for (int j = 0; j < 8; j++)
-	    for (int k = 0; k < 8; k++)
-		assert(src.at({i,j,k}) == dst.at({i,k,j}));
+    Array<int> dst_gpu = a.to_host();
+
+    for (int i = 0; i < nelts; i++)
+	assert(dst_gpu.data[i] == dst_cpu.data[i]);
 
     cout << "test_transpose_rank8_4bit: pass" << endl;
 }
@@ -196,13 +129,15 @@ __host__ void test_transpose_rank8_4bit()
 
 __host__ int8_t pack_complex44(complex<int> z)
 {
+    constexpr int8_t bit = CorrelatorParams::offset_encoded ? 0x88 : 0;
+    
     assert((z.real() >= -7) && (z.real() <= 7));
     assert((z.imag() >= -7) && (z.imag() <= 7));
 
     if constexpr (CorrelatorParams::real_part_in_low_bits)
-	return (z.real() & 0xf) | (z.imag() << 4);
+	return ((z.real() & 0xf) | (z.imag() << 4)) ^ bit;
     else
-	return (z.imag() & 0xf) | (z.real() << 4);
+	return ((z.imag() & 0xf) | (z.real() << 4)) ^ bit;
 }
 
 
@@ -242,7 +177,7 @@ __host__ void minimal_correlator_test(int nstations, int nfreq, int f, int sa, i
     int tab = (ahi*(ahi+1))/2 + bhi;
     int tbb = (bhi*(bhi+1))/2 + bhi;
     
-    cout << "minimal_correlator_test(): start:"
+    cout << "\nminimal_correlator_test(): start:"
 	 << " nstations=" << nstations << ", nfreq=" << nfreq
 	 << ", f=" << f << ", sa=" << sa << ", sb=" << sb << ", t=" << t
 	 << ", za=" << za << ", Ea=" << ea << ", zb=" << zb << ", Eb=" << eb
@@ -250,7 +185,9 @@ __host__ void minimal_correlator_test(int nstations, int nfreq, int f, int sa, i
 
     Correlator corr(nstations, nfreq);
     
-    Array<int8_t> emat({nt_tot,nfreq,nstations}, af_rhost | af_zero);
+    Array<int8_t> emat({nt_tot,nfreq,nstations}, af_rhost);
+    memset(emat.data, (CorrelatorParams::offset_encoded ? 0x88 : 0), emat.size);
+    
     emat.at({t,f,sa}) = ea;
     emat.at({t,f,sb}) = eb;
 
@@ -345,6 +282,7 @@ void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner, int M
 
     Array<int> vmat_cpu({nt_outer,nfreq,nvtiles,16,16,2}, af_rhost | af_zero);
     Array<int8_t> emat({nt_tot,nfreq,nstations}, af_rhost | af_zero);
+    memset(emat.data, (CorrelatorParams::offset_encoded ? 0x88 : 0), emat.size);
     
     assert((nt_tot % 32) == 0);
     Array<uint> rfimask({nfreq,nt_tot/32}, af_rhost | af_zero);
@@ -443,7 +381,6 @@ void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner, int M
 
 int main(int argc, char **argv)
 {
-    test_pack_unpack();
     test_negate_4bit();
     test_transpose_rank8_4bit();
 
@@ -452,8 +389,8 @@ int main(int argc, char **argv)
     // but we don't run it by default.
 
     // (nstations, nfreq, f, sa, sb, t, za, ab)
-    // minimal_correlator_test(128, 128, 3, 37, 23, 183, {1,2}, {3,4});
-    // minimal_correlator_test(1024, 8, 5, 335, 159, 137, {1,2}, {3,4});
+    minimal_correlator_test(128, 128, 3, 37, 23, 183, {1,2}, {3,4});
+    minimal_correlator_test(1024, 8, 5, 335, 159, 137, {1,2}, {3,4});
 
     // Full end-to-end test starts here.
     
