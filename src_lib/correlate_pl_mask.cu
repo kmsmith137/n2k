@@ -35,16 +35,16 @@ namespace n2k {
 // Reads a 16-by-128 submatrix, as two 8-by-128 fragments in tensor core ordering (see above).
 // The global memory pointer 'pl_adjusted' should include threadblock/warp offsets to point
 // at the appropriate 16-by-128 submatrix, plus the 'pl_lane_offset' (see below) so that
-// each lane points to a distinct 64-bit (int2) part of the 16-by-128 submatrix.
+// each lane points to a distinct 64-bit part of the 16-by-128 submatrix.
 
-__device__ inline void read_pl_16_128(int pl[2][1], const int2 *pl_adjusted)
+__device__ inline void read_pl_16_128(int pl[2][1], const ulong *pl_adjusted)
 {
     // pl_lane_offset() has been written so that dereferencing the pointer gives
     // the following register assigment:
     //
     // b0 b1 b2 b3 b4 <-> j0 j1 j2 j3 j4    t0 t1 t2 t3 t4 <-> i3 j6 i0 i1 i2    r <-> j5
     
-    int2 t = *pl_adjusted;
+    int2 t = *((const int2 *) pl_adjusted);
     
     // Now we're one warp_transpose() away from the desired tensor core assignment:
     //
@@ -55,16 +55,16 @@ __device__ inline void read_pl_16_128(int pl[2][1], const int2 *pl_adjusted)
     pl[1][0] = t.y;
 }
 
-// The following per-lane offset is applied to the (int2 *pl) global memory pointer,
-// so that each lane points to a distinct 64-bit (uint2) part of a 16-by-128 submatrix.
+// The following per-lane offset is applied to the 'pl' global memory pointer,
+// so that each lane points to a distinct 64-bit part of a 16-by-128 submatrix.
 //
 // The pl_lane_offset is constructed so that dereferencing the pointer gives
 // the following register assignment:
 //
 // b0 b1 b2 b3 b4 <-> j0 j1 j2 j3 j4    t0 t1 t2 t3 t4 <-> i3 j6 i0 i1 i2    r <-> j5
 //
-// Note: return value is a 64-bit (int2) offset, and 't64_stride' is a 64-bit offset.
-// (That is, the 't64_stride' argument should be F*S.)
+// Reminder: offsets/strides are 64-bit, since pl is (const ulong *).
+// (In particular, the 't64_stride' argument should be F*S.)
 
 __device__ inline int pl_lane_offset(uint t64_stride)
 {
@@ -105,7 +105,7 @@ __device__ inline void write_v_8_8(int *v_out, int v[2])
 
 template<bool Debug>
 __global__ void __launch_bounds__(128,8)
-correlate_pl_kernel_S16(int *V_out, const int2 *pl_mask, int Tout, int F, uint N128)
+correlate_pl_kernel_S16(int *V_out, const ulong *pl_mask, int Tout, int F, uint N128)
 {
     if constexpr (Debug) {
 	assert(blockDim.x == 32);
@@ -122,8 +122,8 @@ correlate_pl_kernel_S16(int *V_out, const int2 *pl_mask, int Tout, int F, uint N
     if ((tout >= Tout) || (f >= F))
 	return;   // okay since this kernel never calls __syncthreads()
 
-    // int2 pl_mask[T/64][F][S];
-    const uint t128_stride = (2*F) * S;       // 64-bit (int2) stride
+    // ulong pl_mask[T/64][F][S];
+    const uint t128_stride = (2*F) * S;  // 64-bit (ulong) stride
     pl_mask += ulong(tout) * ulong(N128) * ulong(t128_stride);
     pl_mask += (f * S) + pl_lane_offset(F*S);
     
@@ -179,9 +179,9 @@ void launch_correlate_pl_kernel(int *V_out, const ulong *pl_mask, long T, long F
     dim3 nblocks = { 1, uint(F+1)/2, uint(Tout+1)/2 };
     
     if (debug)
-	correlate_pl_kernel_S16<true> <<< nblocks, nthreads, 0, stream >>> (V_out, (const int2 *) pl_mask, Tout, F, N128);
+	correlate_pl_kernel_S16<true> <<< nblocks, nthreads, 0, stream >>> (V_out, pl_mask, Tout, F, N128);
     else
-	correlate_pl_kernel_S16<false> <<< nblocks, nthreads, 0, stream >>> (V_out, (const int2 *) pl_mask, Tout, F, N128);
+	correlate_pl_kernel_S16<false> <<< nblocks, nthreads, 0, stream >>> (V_out, pl_mask, Tout, F, N128);
 
     CUDA_PEEK("correlate_pl_kernel_S16");
 }
