@@ -89,20 +89,27 @@ __device__ inline int pl_lane_offset(uint t64_stride)
 
 template<bool Debug>
 __global__ void __launch_bounds__(128,8)
-correlate_pl_kernel_S16(int4 *V_out, const int2 *pl_mask, uint N128)
+correlate_pl_kernel_S16(int4 *V_out, const int2 *pl_mask, int Tout, int F, uint N128)
 {
-    // The S16 kernel uses 4 warps, with blockDim.x == 32
-    // and (blockDim.y * blockDim.z) == 4.
+    if constexpr (Debug) {
+	assert(blockDim.x == 32);
+	assert(blockDim.y * blockDim.z == 4);
+	assert(gridDim.x == 1);
+	assert(gridDim.z * blockDim.z >= Tout);
+	assert(gridDim.y * blockDim.y >= F);
+    }
     
-    constexpr int S = 16;
-    
+    constexpr int S = 16;    
     const uint tout = blockIdx.z * blockDim.z + threadIdx.z;
     const uint f = blockIdx.y * blockDim.y + threadIdx.y;
-    const uint F = gridDim.y;
+
+    if ((tout >= Tout) || (f >= F))
+	return;   // okay since this kernel never calls __syncthreads()
 
     // int2 pl_mask[T/64][F][S];
-    const uint t128_stride = (2*S) * F;  // 64-bit (int2) stride
-    pl_mask += ulong(tout * N128) * ulong(t128_stride);
+    const uint t128_stride = (2*F) * S;       // 64-bit (int2) stride
+    pl_mask += ulong(tout) * ulong(N128) * ulong(t128_stride);
+    pl_mask += f * S;
     pl_mask += pl_lane_offset(F*S);
     
     int pl[2][1];
@@ -133,7 +140,7 @@ correlate_pl_kernel_S16(int4 *V_out, const int2 *pl_mask, uint N128)
     //   Each warp (out of 4) stores a 16-by-16 matrix V_{ik}.
     //   Write k = 8*k3 + klo, where 0 <= klo < 8.
     //   Use strides (i,klo,k3) = (1,20,168) ~ (1,4,8).
-    //   Total number of elements = 16 + 20*7 + 168 = 324.
+    //   Total number of elements = 16 + 20*7 + 168 = 324 (per warp).
 
     __shared__ int shmem[4*324];
 
@@ -152,6 +159,7 @@ correlate_pl_kernel_S16(int4 *V_out, const int2 *pl_mask, uint N128)
     bank_conflict_free_store<Debug> (sp + 8 + 20, v[1][0][1]);
     bank_conflict_free_store<Debug> (sp + 8 + 168, v[1][1][0]);
     bank_conflict_free_store<Debug> (sp + 8 + 168 + 20, v[1][1][1]);
+    __syncwarp();
 
     // Read V from shared memory, in register assignment:
     //   r0 r1 r2 <-> k0 k1 i3       t0 t1 t2 t3 t4 <-> k2 k3 i0 i1 i2
@@ -171,7 +179,7 @@ correlate_pl_kernel_S16(int4 *V_out, const int2 *pl_mask, uint N128)
 
     // Write to global memory.
     // int4 V_out[Tout][F][16][4]
-    
+
     V_out += 64 * ulong(tout*F + f);
     V_out += threadIdx.x;
     V_out[0] = vout0;
@@ -195,14 +203,13 @@ void launch_correlate_pl_kernel(int *V_out, const ulong *pl_mask, long T, long F
     
     long Tout = T / Nds;
     uint N128 = Nds >> 7;
-
-    dim3 nblocks, nthreads;
-    gputils::assign_kernel_dims(nblocks, nthreads, 32, F, Tout, 128);   // threads_per_block=128
+    dim3 nthreads = {32, 2, 2};
+    dim3 nblocks = { 1, uint(F+1)/2, uint(Tout+1)/2 };
     
     if (debug)
-	correlate_pl_kernel_S16<true> <<< nblocks, nthreads, 0, stream >>> ((int4 *) V_out, (const int2 *) pl_mask, N128);
+	correlate_pl_kernel_S16<true> <<< nblocks, nthreads, 0, stream >>> ((int4 *) V_out, (const int2 *) pl_mask, Tout, F, N128);
     else
-	correlate_pl_kernel_S16<false> <<< nblocks, nthreads, 0, stream >>> ((int4 *) V_out, (const int2 *) pl_mask, N128);
+	correlate_pl_kernel_S16<false> <<< nblocks, nthreads, 0, stream >>> ((int4 *) V_out, (const int2 *) pl_mask, Tout, F, N128);
 
     CUDA_PEEK("correlate_pl_kernel_S16");
 }

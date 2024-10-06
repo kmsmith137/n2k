@@ -28,10 +28,10 @@ static void test_correlate_pl_mask(long T, long F, long S, long Nds)
     long Tout = T / Nds;
     long ntiles = ((S/16) * ((S/16)+1)) / 2;
     
-    Array<ulong> pl_cpu({T/64, F, S}, af_rhost);
+    Array<ulong> pl_cpu({T/64, F, S}, af_rhost | af_zero);
     Array<int> v_cpu({Tout,F,ntiles,16,16}, af_uhost);
-    Array<int> v_gpu({Tout,F,ntiles,16,16}, af_gpu);
-    
+    Array<int> v_gpu({Tout,F,ntiles,16,16}, af_gpu | af_guard);
+
     for (long i = 0; i < pl_cpu.size; i++) {
 	ulong x = ulong(gputils::default_rng());
 	x ^= (ulong(gputils::default_rng()) << 22);
