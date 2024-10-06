@@ -39,6 +39,24 @@ static __device__ int blend(int a, int b, int c)
 }
 
 
+// -------------------------------------------------------------------------------------------------
+//
+// Transposes.
+
+
+template<typename T>
+__device__ inline void warp_transpose(T &x, T &y, uint bit)
+{
+    static_assert(sizeof(T) == 4);
+    
+    bool upper = (threadIdx.x & bit);
+    T src = upper ? x : y;
+    T z = __shfl_sync(FULL_MASK, src, threadIdx.x ^ bit);
+    x = upper ? z : x;
+    y = upper ? y : z;
+}
+
+
 // Used in _transpose_bit_with_lane().
 template<uint B> struct _bit_selector;
 template<> struct _bit_selector<1> { static constexpr uint value = 0xaaaaaaaaU; };  // 0xa = (1010)_2
@@ -79,32 +97,65 @@ __device__ uint transpose_bit_with_lane(uint x, uint lane)
 }
 
 
+// -------------------------------------------------------------------------------------------------
+//
+// Bank-conflict-free asserts.
+
+
+template<bool Verbose=false>
+__device__ inline void assert_bank_conflict_free(int bank)
+{
+    uint bit = 1U << bank;
+    uint bits = __reduce_or_sync(FULL_MASK, bit);
+    
+    if constexpr (Verbose) {
+	if (bits != FULL_MASK) {
+	    for (int i = 0; i < 32; i++) {
+		if ((threadIdx.x & 31) == i)
+		    printf("bank_conflict_free assert failed: laneId=%d bank=%d\n", i, bank);
+		__syncwarp();
+	    }
+	}
+    }
+    
+    assert(bits == FULL_MASK);
+}
+
+
 template<bool Debug, bool Verbose=false, typename T>
 __device__ inline T bank_conflict_free_load(const T *p)
 {
+    // Assumed for now, but could be relaxed.
     static_assert(sizeof(T) == 4);
     
     if constexpr (Debug) {
 	int bank = (ulong(p) >> 2) & 31;  // assumes sizeof(T)==4
-	uint bit = 1U << bank;
-	uint bits = __reduce_or_sync(FULL_MASK, bit);
-
-	if constexpr (Verbose) {
-	    if (bits != FULL_MASK) {
-		for (int i = 0; i < 32; i++) {
-		    if ((threadIdx.x & 31) == i)
-			printf("bank_conflict_free assert failed: laneId=%d bank=%d\n", i, bank);
-		    __syncwarp();
-		}
-	    }
-	}
-
-	assert(bits == FULL_MASK);
+	assert_bank_conflict_free(bank);
     }
 
     return *p;
 }
 
+
+template<bool Debug, bool Verbose=false, typename T>
+__device__ inline void bank_conflict_free_store(T *p, T x)
+{
+    // Assumed for now, but could be relaxed.
+    static_assert(sizeof(T) == 4);
+    
+    if constexpr (Debug) {
+	int bank = (ulong(p) >> 2) & 31;  // assumes sizeof(T)==4
+	assert_bank_conflict_free(bank);
+    }
+
+    *p = x;
+}
+
+
+// -------------------------------------------------------------------------------------------------
+
+
+// Called by roll_forward(), roll_backward().
 __device__ inline void swap_if(bool flag, float &x, float &y)
 {
     float t = x;

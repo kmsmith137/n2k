@@ -8,6 +8,9 @@
 #include "n2k/s012_kernels.hpp"
 #include "n2k/SkKernel.hpp"
 
+// PL mask kernels (including 1-bit visibility matrix)
+#include "n2k/pl_kernels.hpp"
+
 // Used internally
 // #include "n2k/CorrelatorKernel.hpp"
 // #include "n2k/bad_feed_mask.hpp"

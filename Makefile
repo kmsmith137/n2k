@@ -26,6 +26,7 @@ HFILES = \
   include/n2k/device_inlines.hpp \
   include/n2k/internals.hpp \
   include/n2k/interpolation.hpp \
+  include/n2k/pl_kernels.hpp \
   include/n2k/s012_kernels.hpp \
   include/n2k/sk_globals.hpp
 
@@ -33,6 +34,7 @@ HFILES = \
 OFILES = \
   src_lib/Correlator.o \
   src_lib/SkKernel.o \
+  src_lib/correlate_pl_mask.o \
   src_lib/internals.o \
   src_lib/kernel_table.o \
   src_lib/precompute_offsets.o \
@@ -73,6 +75,7 @@ LIBFILES = \
 
 XFILES = \
   bin/test-correlator \
+  bin/test-pl-kernels \
   bin/test-rfi-kernels \
   bin/time-correlator \
   bin/time-rfi-kernels \
