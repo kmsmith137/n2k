@@ -40,7 +40,7 @@ static void test_correlate_pl_mask(long T, long F, long S, long Nds)
     }
 
     Array<ulong> pl_gpu = pl_cpu.to_gpu();
-    launch_correlate_pl_kernel(v_gpu, pl_gpu, Nds, 0, true);   // stream=0, debug=true
+    launch_correlate_pl_kernel(v_gpu, pl_gpu, Nds);
     CUDA_CALL(cudaDeviceSynchronize());
 
     // CPU implementation of correlate_pl_kernel() starts here.
@@ -83,13 +83,13 @@ static void test_correlate_pl_mask(long T, long F, long S, long Nds)
 static void test_correlate_pl_mask()
 {
     for (int n = 0; n < 100; n++) {
+	long S = rand_int(0,2) ? 16 : 128;  // for now
+	
 	// v = (T/Nds, F, Nds/128)
-	vector<ssize_t> v = gputils::random_integers_with_bounded_product(3, 1000);
-
+	vector<ssize_t> v = gputils::random_integers_with_bounded_product(3, 10*1000*1000/(S*S));
 	long Nds = v[2] * 128;
 	long F = v[1];
 	long T = v[0] * Nds;
-	long S = 16;   // for now
 	
 	test_correlate_pl_mask(T, F, S, Nds);
     }

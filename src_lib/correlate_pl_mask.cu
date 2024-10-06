@@ -82,7 +82,7 @@ __device__ inline int pl_lane_offset(uint t64_stride)
 
 // FIXME comment this
 //   r <-> k0      t0 t1 t2 t3 t4 <-> k1 k2 i0 i1 i2
-__device__ inline void write_v_8_8(int *v_out, int v[2])
+__device__ inline void write_8_8(int *v_out, int v[2])
 {
     int2 t;
     t.x = v[0];
@@ -90,6 +90,13 @@ __device__ inline void write_v_8_8(int *v_out, int v[2])
 
     int2 *p = (int2 *) (v_out);
     p[threadIdx.x & 31] = t;
+}
+
+
+__device__ inline void write_8_16(int *v_out, int v[2][2])
+{
+    write_8_8(v_out, v[0]);
+    write_8_8(v_out + 128, v[1]);
 }
 
 
@@ -103,17 +110,10 @@ __device__ inline void write_v_8_8(int *v_out, int v[2])
 //     (blockIdx.x not currently used, but will be used when S > 1024 is implemented)
 
 
-template<bool Debug>
 __global__ void __launch_bounds__(128,8)
 correlate_pl_kernel_S16(int *V_out, const ulong *pl_mask, int Tout, int F, uint N128)
 {
-    if constexpr (Debug) {
-	assert(blockDim.x == 32);
-	assert(blockDim.y * blockDim.z == 4);
-	assert(gridDim.x == 1);
-	assert(gridDim.z * blockDim.z >= Tout);
-	assert(gridDim.y * blockDim.y >= F);
-    }
+    // Assumes blockDim = {32,Wy,Wz} where (Wy*Wz)=4.
     
     constexpr int S = 16;    
     const uint tout = blockIdx.z * blockDim.z + threadIdx.z;
@@ -150,23 +150,159 @@ correlate_pl_kernel_S16(int *V_out, const ulong *pl_mask, int Tout, int F, uint 
     V_out += (192 * f);
 
     // Write to global memory.
-    write_v_8_8(V_out, v[0]);
-    write_v_8_8(V_out + 64, v[1]);
-    write_v_8_8(V_out + 128, v[2]);
+    write_8_8(V_out, v[0]);
+    write_8_8(V_out + 64, v[1]);
+    write_8_8(V_out + 128, v[2]);
 }
 
 
 // -------------------------------------------------------------------------------------------------
 
 
-void launch_correlate_pl_kernel(int *V_out, const ulong *pl_mask, long T, long F, long S, long Nds, cudaStream_t stream, bool debug)
+__device__ inline void multiply_8_16(int v[2][2], int plx[1], int ply[2][1])
+{
+    mma_b1_m8_n8_k128(v[0], plx, ply[0], v[0]);
+    mma_b1_m8_n8_k128(v[1], plx, ply[1], v[1]);
+}
+
+
+__global__ void __launch_bounds__(256,2)
+correlate_pl_kernel_S128(int *V_out, const ulong *pl_mask, uint N128)
+{
+    constexpr int S = 16;    
+    const uint tout = blockIdx.z;
+    const uint f = blockIdx.y;
+    const uint F = gridDim.y;
+    
+    // Assumes blockDim = {256,1,1}.
+    const int w = threadIdx.x >> 5;    // 0 <= w < 8
+    const int wx = (w & 3);            // 0 <= wx < 4
+    const int wy = (w >> 2);           // 0 <= wy < 2
+    const int laneId = (threadIdx.x & 31);
+
+    __shared__ int shmem[16*32];  // 2 KB
+    
+    // ulong pl_mask[T/64][F][S];
+    // We assign a 16-by-128 contiguous submatrix to each warp.
+    const uint t128_stride = (2*F) * S;       // 64-bit (int2) stride
+    pl_mask += ulong(tout) * ulong(N128) * ulong(t128_stride);
+    pl_mask += (f * S) + (w * 16) + pl_lane_offset(F*S);
+
+    // MMA inputs/outputs (54 registers/thread!)
+    int pl_in[2][1];
+    int plx[4][1];
+    int ply[4][2][1];
+    int v[10][2][2];
+
+    // FIXME try pragma unroll and check SASS.
+    v[0][0][0] = v[0][0][1] = v[0][1][0] = v[0][1][1] = 0;
+    v[1][0][0] = v[1][0][1] = v[1][1][0] = v[1][1][1] = 0;
+    v[2][0][0] = v[2][0][1] = v[2][1][0] = v[2][1][1] = 0;
+    v[3][0][0] = v[3][0][1] = v[3][1][0] = v[3][1][1] = 0;
+    v[4][0][0] = v[4][0][1] = v[4][1][0] = v[4][1][1] = 0;
+    v[5][0][0] = v[5][0][1] = v[5][1][0] = v[5][1][1] = 0;
+    v[6][0][0] = v[6][0][1] = v[6][1][0] = v[6][1][1] = 0;
+    v[7][0][0] = v[7][0][1] = v[7][1][0] = v[7][1][1] = 0;
+    v[8][0][0] = v[8][0][1] = v[8][1][0] = v[8][1][1] = 0;
+    v[9][0][0] = v[9][0][1] = v[9][1][0] = v[9][1][1] = 0;
+    
+    while (N128 > 0) {
+	// Read 16-by-128 submatrix from global memory.
+	read_pl_16_128(pl_in, pl_mask);
+
+	// Write 16-by-128 submatrix to shared memory.
+	shmem[64*w + laneId] = pl_in[0][0];
+	shmem[64*w + laneId + 32] = pl_in[1][0];
+	
+	__syncthreads();
+
+	// Read from shared memory.
+	// FIXME try pragma unroll and check SASS.
+	
+	plx[0][0] = shmem[32*wx + laneId];
+	plx[1][0] = shmem[32*wx + laneId + 128];
+	plx[2][0] = shmem[32*wx + laneId + 256];
+	plx[3][0] = shmem[32*wx + laneId + 384];
+
+	ply[0][0][0] = shmem[32*wy + laneId];
+	ply[0][1][0] = shmem[32*wy + laneId + 64];
+	ply[1][0][0] = shmem[32*wy + laneId + 128];
+	ply[1][1][0] = shmem[32*wy + laneId + 192];
+	ply[2][0][0] = shmem[32*wy + laneId + 256];
+	ply[2][1][0] = shmem[32*wy + laneId + 320];
+	ply[3][0][0] = shmem[32*wy + laneId + 384];
+	ply[3][1][0] = shmem[32*wy + laneId + 448];
+
+	// Do matrix multiplications (20 int1 m8n8k128 MMAs).
+	// FIXME could try pragma unroll here as well.
+	
+	multiply_8_16(v[0], plx[0], ply[0]);
+	multiply_8_16(v[1], plx[1], ply[0]);
+	multiply_8_16(v[2], plx[1], ply[1]);
+	multiply_8_16(v[3], plx[2], ply[0]);
+	multiply_8_16(v[4], plx[2], ply[1]);
+	multiply_8_16(v[5], plx[2], ply[2]);
+	multiply_8_16(v[6], plx[3], ply[0]);
+	multiply_8_16(v[7], plx[3], ply[1]);
+	multiply_8_16(v[8], plx[3], ply[2]);
+	multiply_8_16(v[9], plx[3], ply[3]);
+
+	pl_mask += t128_stride;
+	N128--;
+    }
+
+    // Write to global memory.
+    //   i = 4*I + wx          0 <= wx < 4
+    //   j = 4*J + 2*R + wy    0 <= wy < 2, 0 <= R < 2
+    //
+    // Offset = 64*i(i+1)/2  + 64*j
+    //        = 512*I^2 + a*I + 256*J + 128*R + b
+    //
+    //  where a = 256*wx + 128
+    //        b = 32*wx*(wx+1) + 64*wy
+			 
+    int a = 256*wx + 128;
+    V_out += 32*wx*(wx+1) + 64*wy;
+
+    // Off-diagonals (I > J).
+    // Pointer offsets are (a*I + 512*I^2 + 256*J).
+    
+    write_8_16(V_out + a + 512, v[1]);              // I=1, J=0
+    write_8_16(V_out + 2*a + 4*512, v[3]);          // I=2, J=0
+    write_8_16(V_out + 2*a + 4*512 + 256, v[4]);    // I=2, J=1
+    write_8_16(V_out + 3*a + 9*512, v[6]);          // I=3, J=0
+    write_8_16(V_out + 3*a + 9*512 + 256, v[7]);    // I=3, J=1
+    write_8_16(V_out + 3*a + 9*512 + 2*256, v[8]);    // I=3, J=2
+
+    // Diagonals (I = J).
+    // We only write if (wx >= wy+2R).
+
+    if (wx >= wy) {   // write R=0
+	write_8_8(V_out, v[0][0]);                        // I=J=0
+	write_8_8(V_out + a + 512 + 256, v[2][0]);        // I=J=1
+	write_8_8(V_out + 2*a + 4*512 + 2*256, v[5][0]);  // I=J=2
+	write_8_8(V_out + 3*a + 9*512 + 3*256, v[9][0]);  // I=J=3
+    }
+
+    if (wx >= wy+2) {  // write R=1
+	write_8_8(V_out + 128, v[0][1]);                        // I=J=0
+	write_8_8(V_out + a + 512 + 256 + 128, v[2][1]);        // I=J=1
+	write_8_8(V_out + 2*a + 4*512 + 2*256 + 128, v[5][1]);  // I=J=2
+	write_8_8(V_out + 3*a + 9*512 + 3*256 + 128, v[9][1]);  // I=J=3
+    }
+}
+
+
+// -------------------------------------------------------------------------------------------------
+
+
+void launch_correlate_pl_kernel(int *V_out, const ulong *pl_mask, long T, long F, long S, long Nds, cudaStream_t stream)
 {
     // FIXME asserts -> exceptions
     assert(V_out != nullptr);
     assert(pl_mask != nullptr);
     assert(T > 0);
     assert(F > 0);
-    assert(S == 16);  // for now
     assert(Nds > 0);
     assert((Nds % 128) == 0);
     assert((T % Nds) == 0);
@@ -175,19 +311,30 @@ void launch_correlate_pl_kernel(int *V_out, const ulong *pl_mask, long T, long F
     
     long Tout = T / Nds;
     uint N128 = Nds >> 7;
-    dim3 nthreads = {32, 2, 2};
-    dim3 nblocks = { 1, uint(F+1)/2, uint(Tout+1)/2 };
-    
-    if (debug)
-	correlate_pl_kernel_S16<true> <<< nblocks, nthreads, 0, stream >>> (V_out, pl_mask, Tout, F, N128);
-    else
-	correlate_pl_kernel_S16<false> <<< nblocks, nthreads, 0, stream >>> (V_out, pl_mask, Tout, F, N128);
 
-    CUDA_PEEK("correlate_pl_kernel_S16");
+    if (S == 16) {
+	dim3 nthreads = {32, 2, 2};
+	dim3 nblocks = { 1, uint(F+1)/2, uint(Tout+1)/2 };
+	
+	correlate_pl_kernel_S16
+	    <<< nblocks, nthreads, 0, stream >>>
+	    (V_out, pl_mask, Tout, F, N128);
+    }
+    else if (S == 128) {
+	dim3 nblocks = { 1, uint(F), uint(Tout) };
+	
+	correlate_pl_kernel_S128
+	    <<< nblocks, 256, 0, stream >>>
+	    (V_out, pl_mask, N128);
+    }
+    else
+	throw runtime_error("launch_correlate_pl_kernel: currently, only S=16 and S=128 are implemented");
+    
+    CUDA_PEEK("correlate_pl_kernel");
 }
 
 
-void launch_correlate_pl_kernel(Array<int> &V_out, const Array<ulong> &pl_mask, long Nds, cudaStream_t stream, bool debug)
+void launch_correlate_pl_kernel(Array<int> &V_out, const Array<ulong> &pl_mask, long Nds, cudaStream_t stream)
 {
     // pl_mask shape = (T/64, F, S)
     // V_out shape = (T/Nds, F, ntiles, 8, 8)
@@ -207,7 +354,7 @@ void launch_correlate_pl_kernel(Array<int> &V_out, const Array<ulong> &pl_mask, 
     assert((T % Nds) == 0);
     assert(V_out.shape_equals({T/Nds,F,ntiles,8,8}));
     
-    launch_correlate_pl_kernel(V_out.data, pl_mask.data, T, F, S, Nds, stream, debug);
+    launch_correlate_pl_kernel(V_out.data, pl_mask.data, T, F, S, Nds, stream);
 }
 
 
