@@ -78,6 +78,7 @@ XFILES = \
   bin/test-pl-kernels \
   bin/test-rfi-kernels \
   bin/time-correlator \
+  bin/time-pl-kernels \
   bin/time-rfi-kernels \
   bin/run-rfi-mcs \
   bin/scratch

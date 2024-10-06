@@ -11,10 +11,10 @@ static void time_correlate_pl(const string &name, long T, long F, long S, long N
     const long nouter = 10;
     
     long Tout = T / Nds;
-    long ntiles = ((S/16) * ((S/16)+1)) / 2;
+    long ntiles = ((S/8) * ((S/8)+1)) / 2;
 
     Array<ulong> pl({T/64, F, S}, af_gpu | af_zero);
-    Array<int> v({Tout,F,ntiles,16,16}, af_gpu | af_zero);
+    Array<int> v({Tout,F,ntiles,8,8}, af_gpu | af_zero);
     double gb = 1.0e-9 * ninner * (8*pl.size + 4*v.size);
 
     auto callback = [&](const CudaStreamPool &pool, cudaStream_t stream, int istream)

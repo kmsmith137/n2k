@@ -26,11 +26,11 @@ static void test_correlate_pl_mask(long T, long F, long S, long Nds)
     cout << "test_correlate_pl_mask: T=" << T << ", F=" << F << ", S=" << S << ", Nds=" << Nds << endl;
 
     long Tout = T / Nds;
-    long ntiles = ((S/16) * ((S/16)+1)) / 2;
+    long ntiles = ((S/8) * ((S/8)+1)) / 2;
     
     Array<ulong> pl_cpu({T/64, F, S}, af_rhost | af_zero);
-    Array<int> v_cpu({Tout,F,ntiles,16,16}, af_uhost);
-    Array<int> v_gpu({Tout,F,ntiles,16,16}, af_gpu | af_guard);
+    Array<int> v_cpu({Tout,F,ntiles,8,8}, af_uhost);
+    Array<int> v_gpu({Tout,F,ntiles,8,8}, af_gpu | af_guard);
 
     for (long i = 0; i < pl_cpu.size; i++) {
 	ulong x = ulong(gputils::default_rng());
@@ -51,24 +51,24 @@ static void test_correlate_pl_mask(long T, long F, long S, long Nds)
     for (long tout = 0; tout < Tout; tout++) {
 	for (long f = 0; f < F; f++) {
 	    const ulong *pl_tf = &pl_cpu.at({tout*N64,f,0});  // shape (N64,S), strides (t64_stride, 1)
-	    int *v_tf = &v_cpu.at({tout,f,0,0,0});            // shape (ntiles,16,16), contiguous
+	    int *v_tf = &v_cpu.at({tout,f,0,0,0});            // shape (ntiles,8,8), contiguous
 	    
-	    for (long ixtile = 0; ixtile < (S/16); ixtile++) {
+	    for (long ixtile = 0; ixtile < (S/8); ixtile++) {
 		for (long iytile = 0; iytile <= ixtile; iytile++) {
 		    long itile = (ixtile*(ixtile+1))/2 + iytile;
-		    const ulong *plx = pl_tf + 16*ixtile;   // shape (N64,16), strides (t64_stride, 1)
-		    const ulong *ply = pl_tf + 16*iytile;   // shape (N64,16), strides (t64_stride, 1)
-		    int *vtile = v_tf + 256*itile;          // shape (16,16), contiguous
+		    const ulong *plx = pl_tf + 8*ixtile;   // shape (N64,8), strides (t64_stride, 1)
+		    const ulong *ply = pl_tf + 8*iytile;   // shape (N64,8), strides (t64_stride, 1)
+		    int *vtile = v_tf + 64*itile;         // shape (8,8), contiguous
 
-		    for (int i = 0; i < 16; i++) {
-			for (int j = 0; j < 16; j++) {
+		    for (int i = 0; i < 8; i++) {
+			for (int j = 0; j < 8; j++) {
 			    int v = 0;
 			    for (int t64 = 0; t64 < N64; t64++) {
 				long x = plx[t64*t64_stride + i];
 				long y = ply[t64*t64_stride + j];
 				v += bit_count(x & y);
 			    }
-			    vtile[16*i+j] = v;
+			    vtile[8*i+j] = v;
 			}
 		    }
 		}

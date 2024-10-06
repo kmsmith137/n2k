@@ -78,6 +78,22 @@ __device__ inline int pl_lane_offset(uint t64_stride)
 
 
 // -------------------------------------------------------------------------------------------------
+
+
+// FIXME comment this
+//   r <-> k0      t0 t1 t2 t3 t4 <-> k1 k2 i0 i1 i2
+__device__ inline void write_v_8_8(int *v_out, int v[2])
+{
+    int2 t;
+    t.x = v[0];
+    t.y = v[1];
+
+    int2 *p = (int2 *) (v_out);
+    p[threadIdx.x & 31] = t;
+}
+
+
+// -------------------------------------------------------------------------------------------------
 //
 // Parallelization:
 //
@@ -89,7 +105,7 @@ __device__ inline int pl_lane_offset(uint t64_stride)
 
 template<bool Debug>
 __global__ void __launch_bounds__(128,8)
-correlate_pl_kernel_S16(int4 *V_out, const int2 *pl_mask, int Tout, int F, uint N128)
+correlate_pl_kernel_S16(int *V_out, const int2 *pl_mask, int Tout, int F, uint N128)
 {
     if constexpr (Debug) {
 	assert(blockDim.x == 32);
@@ -109,82 +125,38 @@ correlate_pl_kernel_S16(int4 *V_out, const int2 *pl_mask, int Tout, int F, uint 
     // int2 pl_mask[T/64][F][S];
     const uint t128_stride = (2*F) * S;       // 64-bit (int2) stride
     pl_mask += ulong(tout) * ulong(N128) * ulong(t128_stride);
-    pl_mask += f * S;
-    pl_mask += pl_lane_offset(F*S);
+    pl_mask += (f * S) + pl_lane_offset(F*S);
     
     int pl[2][1];
-    int v[2][2][2];
+    int v[3][2];
 
-    v[0][0][0] = v[0][0][1] = v[0][1][0] = v[0][1][1] = 0;
-    v[1][0][0] = v[1][0][1] = v[1][1][0] = v[1][1][1] = 0;
+    v[0][0] = v[0][1] = v[1][0] = v[1][1] = v[2][0] = v[2][1] = 0;
     
     while (N128 > 0) {
 	// Read 16-by-128 PL-submatrix.
 	read_pl_16_128(pl, pl_mask);
 
 	// Accumulate 16-by-16 V-matrix.
-	// One of these MMAs is redundant since V=V^T, but the redundant MMA is
-	// convenient, and the kernel is strongly memory bandwidth limited.
-	
-	mma_b1_m8_n8_k128(v[0][0], pl[0], pl[0], v[0][0]);
-	mma_b1_m8_n8_k128(v[0][1], pl[0], pl[1], v[0][1]);
-	mma_b1_m8_n8_k128(v[1][0], pl[1], pl[0], v[1][0]);
-	mma_b1_m8_n8_k128(v[1][1], pl[1], pl[1], v[1][1]);
+	mma_b1_m8_n8_k128(v[0], pl[0], pl[0], v[0]);
+	mma_b1_m8_n8_k128(v[1], pl[1], pl[0], v[1]);
+	mma_b1_m8_n8_k128(v[2], pl[1], pl[1], v[2]);
 	
 	pl_mask += t128_stride;
 	N128--;
     }
     
-    // Shared memory layout (S=16 only):
-    //
-    //   Each warp (out of 4) stores a 16-by-16 matrix V_{ik}.
-    //   Write k = 8*k3 + klo, where 0 <= klo < 8.
-    //   Use strides (i,klo,k3) = (1,20,168) ~ (1,4,8).
-    //   Total number of elements = 16 + 20*7 + 168 = 324 (per warp).
-
-    __shared__ int shmem[4*324];
-
-    // Write V to shared memory. Current register assignment is:
-    //   r0 r1 r2 <-> k0 k3 i3       t0 t1 t2 t3 t4 <-> k1 k2 i0 i1 i2
-
-    int w = threadIdx.z * blockDim.y + threadIdx.y;
-    int *sp = shmem + (324*w) + (threadIdx.x >> 2) + 40 * (threadIdx.x & 3);
-
-    // Strides are (r0,r1,r2) <-> (k0,k3,i3) = (20,168,8).
-    bank_conflict_free_store<Debug> (sp, v[0][0][0]);
-    bank_conflict_free_store<Debug> (sp + 20, v[0][0][1]);
-    bank_conflict_free_store<Debug> (sp + 168, v[0][1][0]);
-    bank_conflict_free_store<Debug> (sp + 168 + 20, v[0][1][1]);    
-    bank_conflict_free_store<Debug> (sp + 8, v[1][0][0]);
-    bank_conflict_free_store<Debug> (sp + 8 + 20, v[1][0][1]);
-    bank_conflict_free_store<Debug> (sp + 8 + 168, v[1][1][0]);
-    bank_conflict_free_store<Debug> (sp + 8 + 168 + 20, v[1][1][1]);
-    __syncwarp();
-
-    // Read V from shared memory, in register assignment:
-    //   r0 r1 r2 <-> k0 k1 i3       t0 t1 t2 t3 t4 <-> k2 k3 i0 i1 i2
-
-    sp = shmem + (324*w) + (threadIdx.x >> 2) + 80 * (threadIdx.x & 1) + 84 * (threadIdx.x & 2);
-    
-    // Strides are (r0,r1,r2) <-> (k0,k1,i3) = (20,40,8).
-    int4 vout0, vout1;
-    vout0.x = bank_conflict_free_load<Debug> (sp);
-    vout0.y = bank_conflict_free_load<Debug> (sp + 20);
-    vout0.z = bank_conflict_free_load<Debug> (sp + 40);
-    vout0.w = bank_conflict_free_load<Debug> (sp + 60);
-    vout1.x = bank_conflict_free_load<Debug> (sp + 8);
-    vout1.y = bank_conflict_free_load<Debug> (sp + 28);
-    vout1.z = bank_conflict_free_load<Debug> (sp + 48);
-    vout1.w = bank_conflict_free_load<Debug> (sp + 68);
+    // int V_out[Tout][F][3][8][8]
+    V_out += ulong(tout) * ulong(192*F);
+    V_out += (192 * f);
 
     // Write to global memory.
-    // int4 V_out[Tout][F][16][4]
-
-    V_out += 64 * ulong(tout*F + f);
-    V_out += threadIdx.x;
-    V_out[0] = vout0;
-    V_out[32] = vout1;
+    write_v_8_8(V_out, v[0]);
+    write_v_8_8(V_out + 64, v[1]);
+    write_v_8_8(V_out + 128, v[2]);
 }
+
+
+// -------------------------------------------------------------------------------------------------
 
 
 void launch_correlate_pl_kernel(int *V_out, const ulong *pl_mask, long T, long F, long S, long Nds, cudaStream_t stream, bool debug)
@@ -207,9 +179,9 @@ void launch_correlate_pl_kernel(int *V_out, const ulong *pl_mask, long T, long F
     dim3 nblocks = { 1, uint(F+1)/2, uint(Tout+1)/2 };
     
     if (debug)
-	correlate_pl_kernel_S16<true> <<< nblocks, nthreads, 0, stream >>> ((int4 *) V_out, (const int2 *) pl_mask, Tout, F, N128);
+	correlate_pl_kernel_S16<true> <<< nblocks, nthreads, 0, stream >>> (V_out, (const int2 *) pl_mask, Tout, F, N128);
     else
-	correlate_pl_kernel_S16<false> <<< nblocks, nthreads, 0, stream >>> ((int4 *) V_out, (const int2 *) pl_mask, Tout, F, N128);
+	correlate_pl_kernel_S16<false> <<< nblocks, nthreads, 0, stream >>> (V_out, (const int2 *) pl_mask, Tout, F, N128);
 
     CUDA_PEEK("correlate_pl_kernel_S16");
 }
@@ -218,7 +190,7 @@ void launch_correlate_pl_kernel(int *V_out, const ulong *pl_mask, long T, long F
 void launch_correlate_pl_kernel(Array<int> &V_out, const Array<ulong> &pl_mask, long Nds, cudaStream_t stream, bool debug)
 {
     // pl_mask shape = (T/64, F, S)
-    // V_out shape = (T/Nds, F, ntiles, 16, 16)
+    // V_out shape = (T/Nds, F, ntiles, 8, 8)
     
     check_array(pl_mask, "launch_correlate_pl_kernel", "pl_mask", 3, true);  // contiguous=true
     check_array(V_out, "launch_correlate_pl_kernel", "V_out", 5, true);      // contiguous=true
@@ -229,11 +201,11 @@ void launch_correlate_pl_kernel(Array<int> &V_out, const Array<ulong> &pl_mask, 
 
     // FIXME asserts -> exceptions
     assert((S % 16) == 0);
-    long ntiles = ((S/16) * ((S/16) + 1)) / 2;
+    long ntiles = ((S/8) * ((S/8) + 1)) / 2;
 
     assert(Nds > 0);
     assert((T % Nds) == 0);
-    assert(V_out.shape_equals({T/Nds,F,ntiles,16,16}));
+    assert(V_out.shape_equals({T/Nds,F,ntiles,8,8}));
     
     launch_correlate_pl_kernel(V_out.data, pl_mask.data, T, F, S, Nds, stream, debug);
 }
