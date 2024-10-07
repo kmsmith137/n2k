@@ -9,6 +9,11 @@ namespace n2k {
 #endif
 
 
+extern void launch_pl_mask_expander(ulong *pl_out, const ulong *pl_in, long Tout, long Fout, long S, cudaStream_t stream=0);
+
+extern void launch_pl_mask_expander(gputils::Array<ulong> &pl_out, const gputils::Array<ulong> &pl_in, cudaStream_t stream=0);
+
+
 extern void launch_pl_1bit_correlator(
     int *V_out,
     const ulong *pl_mask,

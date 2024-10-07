@@ -1,3 +1,4 @@
+#include "../include/n2k/pl_kernels.hpp"
 #include "../include/n2k/internals.hpp"
 #include "../include/n2k/device_inlines.hpp"
 

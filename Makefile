@@ -37,6 +37,7 @@ OFILES = \
   src_lib/internals.o \
   src_lib/kernel_table.o \
   src_lib/pl_1bit_correlator.o \
+  src_lib/pl_mask_expander.o \
   src_lib/precompute_offsets.o \
   src_lib/s0_kernel.o \
   src_lib/s012_station_downsample.o \

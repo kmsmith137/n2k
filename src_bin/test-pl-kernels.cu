@@ -21,6 +21,21 @@ inline uint bit_count(ulong x)
 }
 
 
+inline void double_bits(ulong &y0, ulong &y1, ulong x)
+{
+    y0 = y1 = 0;
+
+    for (int i = 0; i < 64; i++) {
+	if ((x & (1UL << i)) == 0)
+	    continue;
+	if (i < 32)
+	    y0 |= (3UL << (2*i));
+	else
+	    y1 |= (3UL << (2*i-32));
+    }
+}
+
+
 inline uint rand_uint()
 {
     uint x = uint(gputils::default_rng());
@@ -36,6 +51,64 @@ inline ulong rand_ulong()
     x ^= (ulong(gputils::default_rng()) << 44);
     return x;
 }
+
+
+// ------------------------------------------------------------------------------------------------
+
+
+static void test_pl_mask_expander(long Tout, long Fout, long S)
+{
+    cout << "test_pl_mask_expander: Tout=" << Tout << ", Fout=" << Fout << ", S=" << S << endl;
+
+    long Tin = Tout/2;
+    long Fin = (Fout+3)/4;
+    Array<ulong> pl_in_cpu({Tin/64,Fin,S}, af_rhost);
+    Array<ulong> pl_out_cpu({Tout/64,Fout,S}, af_uhost);
+    Array<ulong> pl_out_gpu({Tout/64,Fout,S}, af_gpu | af_guard);
+
+    for (long i = 0; i < pl_in_cpu.size; i++)
+	pl_in_cpu.data[i] = rand_ulong();
+
+    Array<ulong> pl_in_gpu = pl_in_cpu.to_gpu();
+    launch_pl_mask_expander(pl_out_gpu, pl_in_gpu);
+    CUDA_CALL(cudaDeviceSynchronize());
+
+    // CPU implementation of PL mask expander starts here.
+
+    for (long tin64 = 0; tin64 < (Tin/64); tin64++) {
+	for (long fin = 0; fin < Fin; fin++) {
+	    for (long s = 0; s < S; s++) {
+		ulong x = pl_in_cpu.at({tin64,fin,s});
+		
+		ulong y0, y1;
+		double_bits(y0, y1, x);
+
+		for (long fout = 4*fin; fout < min(4*fin+4,Fout); fout++) {
+		    pl_out_cpu.at({2*tin64,fout,s}) = y0;
+		    pl_out_cpu.at({2*tin64+1,fout,s}) = y1;
+		}
+	    }
+	}
+    }
+
+    gputils::assert_arrays_equal(pl_out_cpu, pl_out_gpu, "cpu", "gpu", {"t64","f","s"});
+}
+
+
+static void test_pl_mask_expander()
+{
+    for (int n = 0; n < 100; n++) {
+	// (Tout/128, Fout, S/16)
+	vector<ssize_t> v = random_integers_with_bounded_product(3, 10000);
+	long Tout = 128 * v[0];
+	long Fout = v[1];
+	long S = 16 * v[2];
+	test_pl_mask_expander(Tout, Fout, S);
+    }
+}
+
+
+// ------------------------------------------------------------------------------------------------
 
 
 static void test_pl_1bit_correlator(long T, long F, long S, long Nds, long rfimask_fstride)
@@ -121,8 +194,12 @@ static void test_pl_1bit_correlator()
 }
 
 
+// ------------------------------------------------------------------------------------------------
+
+
 int main(int argc, char **argv)
 {
+    test_pl_mask_expander();
     test_pl_1bit_correlator();
     return 0;
 }
