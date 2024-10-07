@@ -38,9 +38,9 @@ inline ulong rand_ulong()
 }
 
 
-static void test_correlate_pl_mask(long T, long F, long S, long Nds, long rfimask_fstride)
+static void test_pl_1bit_correlator(long T, long F, long S, long Nds, long rfimask_fstride)
 {
-    cout << "test_correlate_pl_mask: T=" << T << ", F=" << F << ", S=" << S
+    cout << "test_pl_1bit_correlator: T=" << T << ", F=" << F << ", S=" << S
 	 << ", Nds=" << Nds << ", rfimask_fstride=" << rfimask_fstride << endl;
     
     assert(rfimask_fstride >= T/32);
@@ -62,7 +62,7 @@ static void test_correlate_pl_mask(long T, long F, long S, long Nds, long rfimas
     
     Array<ulong> pl_gpu = pl_cpu.to_gpu();
     Array<uint> rfimask_gpu = rfimask_cpu.to_gpu();
-    launch_correlate_pl_kernel(v_gpu, pl_gpu, rfimask_gpu, Nds);
+    launch_pl_1bit_correlator(v_gpu, pl_gpu, rfimask_gpu, Nds);
     CUDA_CALL(cudaDeviceSynchronize());
 
     // CPU implementation of correlate_pl_kernel() starts here.
@@ -104,7 +104,7 @@ static void test_correlate_pl_mask(long T, long F, long S, long Nds, long rfimas
 }
 
 
-static void test_correlate_pl_mask()
+static void test_pl_1bit_correlator()
 {
     for (int n = 0; n < 100; n++) {
 	long S = rand_int(0,2) ? 16 : 128;  // for now
@@ -116,13 +116,13 @@ static void test_correlate_pl_mask()
 	long T = v[0] * Nds;
 	long rfimask_fstride = rand_int(T/32, T/16);
 	
-	test_correlate_pl_mask(T, F, S, Nds, rfimask_fstride);
+	test_pl_1bit_correlator(T, F, S, Nds, rfimask_fstride);
     }
 }
 
 
 int main(int argc, char **argv)
 {
-    test_correlate_pl_mask();
+    test_pl_1bit_correlator();
     return 0;
 }

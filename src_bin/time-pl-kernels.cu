@@ -6,7 +6,7 @@ using namespace gputils;
 using namespace n2k;
 
 
-static void time_correlate_pl(const string &name, long T, long F, long S, long Nds, long ninner)
+static void time_pl_1bit_correlator(const string &name, long T, long F, long S, long Nds, long ninner)
 {
     const long nouter = 10;
     
@@ -21,7 +21,7 @@ static void time_correlate_pl(const string &name, long T, long F, long S, long N
     auto callback = [&](const CudaStreamPool &pool, cudaStream_t stream, int istream)
     {
 	for (long i = 0; i < ninner; i++)
-	    launch_correlate_pl_kernel(v, pl, rfimask, Nds, stream);  // calls CUDA_PEEK()
+	    launch_pl_1bit_correlator(v, pl, rfimask, Nds, stream);  // calls CUDA_PEEK()
     };
 
     CudaStreamPool sp(callback, nouter, 1, name);
@@ -33,8 +33,8 @@ static void time_correlate_pl(const string &name, long T, long F, long S, long N
 int main(int argc, char **argv)
 {
     // (T,F) artificially increased.
-    time_correlate_pl("CHORD pathfinder", 192*1024, 64*1024, 16, 128*48, 5);
-    time_correlate_pl("Full CHORD", 48*1024, 32*1024, 128, 128*48, 5);
+    time_pl_1bit_correlator("1-bit correlator (CHORD pathfinder)", 192*1024, 64*1024, 16, 128*48, 5);
+    time_pl_1bit_correlator("1-bit correlator (full CHORD)", 48*1024, 32*1024, 128, 128*48, 5);
     
     return 0;
 }

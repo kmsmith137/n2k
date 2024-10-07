@@ -9,7 +9,7 @@ namespace n2k {
 #endif
 
 
-extern void launch_correlate_pl_kernel(
+extern void launch_pl_1bit_correlator(
     int *V_out,
     const ulong *pl_mask,
     const uint *rfimask,
@@ -23,7 +23,7 @@ extern void launch_correlate_pl_kernel(
 
 // pl_mask shape = (T/64, F, S)
 // V_out shape = (T/Nds, F, ntiles, 8, 8)
-extern void launch_correlate_pl_kernel(
+extern void launch_pl_1bit_correlator(
     gputils::Array<int> &V_out,
     const gputils::Array<ulong> &pl_mask,
     const gputils::Array<uint> &rfimask,

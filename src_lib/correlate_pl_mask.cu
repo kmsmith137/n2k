@@ -325,7 +325,7 @@ correlate_pl_kernel_S128(int *V_out, const ulong *pl_mask, const uint *rfimask, 
 // -------------------------------------------------------------------------------------------------
 
 
-void launch_correlate_pl_kernel(int *V_out, const ulong *pl_mask, const uint *rfimask, long rfimask_fstride, long T, long F, long S, long Nds, cudaStream_t stream)
+void launch_pl_1bit_correlator(int *V_out, const ulong *pl_mask, const uint *rfimask, long rfimask_fstride, long T, long F, long S, long Nds, cudaStream_t stream)
 {
     // FIXME asserts -> exceptions
     assert(V_out != nullptr);
@@ -359,21 +359,21 @@ void launch_correlate_pl_kernel(int *V_out, const ulong *pl_mask, const uint *rf
 	    (V_out, pl_mask, rfimask, rfimask_fstride, N128);
     }
     else
-	throw runtime_error("launch_correlate_pl_kernel: currently, only S=16 and S=128 are implemented");
+	throw runtime_error("launch_pl_1bit_correlator: currently, only S=16 and S=128 are implemented");
     
     CUDA_PEEK("correlate_pl_kernel");
 }
 
 
-void launch_correlate_pl_kernel(Array<int> &V_out, const Array<ulong> &pl_mask, const Array<uint> &rfimask, long Nds, cudaStream_t stream)
+void launch_pl_1bit_correlator(Array<int> &V_out, const Array<ulong> &pl_mask, const Array<uint> &rfimask, long Nds, cudaStream_t stream)
 {
     // pl_mask shape = (T/64, F, S)
     // V_out shape = (T/Nds, F, ntiles, 8, 8)
     // rfimask shape = (F, T/32)
     
-    check_array(V_out, "launch_correlate_pl_kernel", "V_out", 5, true);       // contiguous=true
-    check_array(pl_mask, "launch_correlate_pl_kernel", "pl_mask", 3, true);   // contiguous=true
-    check_array(rfimask, "launch_correlate_pl_kernel", "rfimask", 2, false);  // contiguous=false
+    check_array(V_out, "launch_pl_1bit_correlator", "V_out", 5, true);       // contiguous=true
+    check_array(pl_mask, "launch_pl_1bit_correlator", "pl_mask", 3, true);   // contiguous=true
+    check_array(rfimask, "launch_pl_1bit_correlator", "rfimask", 2, false);  // contiguous=false
     
     long T = 64 * pl_mask.shape[0];
     long F = pl_mask.shape[1];
@@ -389,7 +389,7 @@ void launch_correlate_pl_kernel(Array<int> &V_out, const Array<ulong> &pl_mask, 
     assert(rfimask.shape_equals({F,T/32}));
     assert(rfimask.strides[1] == 1);
     
-    launch_correlate_pl_kernel(V_out.data, pl_mask.data, rfimask.data, rfimask.strides[0], T, F, S, Nds, stream);
+    launch_pl_1bit_correlator(V_out.data, pl_mask.data, rfimask.data, rfimask.strides[0], T, F, S, Nds, stream);
 }
 
 
