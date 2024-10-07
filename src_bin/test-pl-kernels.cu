@@ -31,7 +31,7 @@ inline void double_bits(ulong &y0, ulong &y1, ulong x)
 	if (i < 32)
 	    y0 |= (3UL << (2*i));
 	else
-	    y1 |= (3UL << (2*i-32));
+	    y1 |= (3UL << (2*i-64));
     }
 }
 
@@ -97,9 +97,9 @@ static void test_pl_mask_expander(long Tout, long Fout, long S)
 
 static void test_pl_mask_expander()
 {
-    for (int n = 0; n < 100; n++) {
+    for (int n = 0; n < 200; n++) {
 	// (Tout/128, Fout, S/16)
-	vector<ssize_t> v = random_integers_with_bounded_product(3, 10000);
+	vector<ssize_t> v = random_integers_with_bounded_product(3, 20000);
 	long Tout = 128 * v[0];
 	long Fout = v[1];
 	long S = 16 * v[2];

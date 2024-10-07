@@ -43,10 +43,10 @@ __global__ void pl_mask_expand_kernel(uint *pl_out, const uint *pl_in, int F, in
 {
     const int Fin = (F+3) >> 2;
     
-    // Parallelization: x <-> m, y <-> f, z <-> n
-    int m = (blockIdx.x * blockDim.x) + threadIdx.x;
+    // Parallelization: x <-> n, y <-> f, z <-> m
+    int n = (blockIdx.x * blockDim.x) + threadIdx.x;
     int f = (blockIdx.y * blockDim.y) + threadIdx.y; 
-    int n = (blockIdx.z * blockDim.z) + threadIdx.z;
+    int m = (blockIdx.z * blockDim.z) + threadIdx.z;
     
     bool valid = (f < Fin) && (m < M) && (n < N);
     int nf_out = valid ? min(F-4*f,4) : 0;
@@ -54,7 +54,7 @@ __global__ void pl_mask_expand_kernel(uint *pl_out, const uint *pl_in, int F, in
     // Ensure array accesses are within bounds.
     f = (f < Fin) ? f : (Fin-1);
     m = (m < M) ? m : (M-1);
-    n = (m < N) ? n : (N-1);
+    n = (n < N) ? n : (N-1);
     
     // pl_in = uint array of shape (M, Fin, N)
     // After these shifts, 'pl_in' points to a scalar.
@@ -73,7 +73,7 @@ __global__ void pl_mask_expand_kernel(uint *pl_out, const uint *pl_in, int F, in
     // Read input mask.
     uint x = *pl_in;
     uint2 y = double_bits(x);
-
+	
     // Write (expanded) output mask.
     for (int i = 0; i < nf_out; i++)
 	*((uint2 *) (pl_out + i*N)) = y;
@@ -98,7 +98,7 @@ void launch_pl_mask_expander(ulong *pl_out, const ulong *pl_in, long Tout, long 
     long N = S * 2;
 
     dim3 nblocks, nthreads;
-    gputils::assign_kernel_dims(nblocks, nthreads, M, Fout, N);
+    gputils::assign_kernel_dims(nblocks, nthreads, N, Fout, M);  // x <-> n, y <-> f, z <-> m
 
     pl_mask_expand_kernel <<< nblocks, nthreads, 0, stream >>>
 	((uint *) pl_out, (const uint *) pl_in, Fout, M, N);
