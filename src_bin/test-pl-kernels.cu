@@ -21,6 +21,15 @@ inline uint bit_count(ulong x)
 }
 
 
+inline ulong rand_ulong()
+{
+    ulong x = ulong(gputils::default_rng());
+    x ^= (ulong(gputils::default_rng()) << 22);
+    x ^= (ulong(gputils::default_rng()) << 44);
+    return x;
+}
+
+
 static void test_correlate_pl_mask(long T, long F, long S, long Nds)
 {
     cout << "test_correlate_pl_mask: T=" << T << ", F=" << F << ", S=" << S << ", Nds=" << Nds << endl;
@@ -32,12 +41,8 @@ static void test_correlate_pl_mask(long T, long F, long S, long Nds)
     Array<int> v_cpu({Tout,F,ntiles,8,8}, af_uhost);
     Array<int> v_gpu({Tout,F,ntiles,8,8}, af_gpu | af_guard);
 
-    for (long i = 0; i < pl_cpu.size; i++) {
-	ulong x = ulong(gputils::default_rng());
-	x ^= (ulong(gputils::default_rng()) << 22);
-	x ^= (ulong(gputils::default_rng()) << 44);
-	pl_cpu.data[i] = x;
-    }
+    for (long i = 0; i < pl_cpu.size; i++)
+	pl_cpu.data[i] = rand_ulong();
 
     Array<ulong> pl_gpu = pl_cpu.to_gpu();
     launch_correlate_pl_kernel(v_gpu, pl_gpu, Nds);

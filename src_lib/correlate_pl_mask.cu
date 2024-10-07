@@ -169,7 +169,7 @@ __device__ inline void multiply_8_16(int v[2][2], int plx[1], int ply[2][1])
 __global__ void __launch_bounds__(256,2)
 correlate_pl_kernel_S128(int *V_out, const ulong *pl_mask, uint N128)
 {
-    constexpr int S = 16;    
+    constexpr int S = 128;
     const uint tout = blockIdx.z;
     const uint f = blockIdx.y;
     const uint F = gridDim.y;
@@ -233,6 +233,8 @@ correlate_pl_kernel_S128(int *V_out, const ulong *pl_mask, uint N128)
 	ply[3][0][0] = shmem[32*wy + laneId + 384];
 	ply[3][1][0] = shmem[32*wy + laneId + 448];
 
+	__syncthreads();
+	
 	// Do matrix multiplications (20 int1 m8n8k128 MMAs).
 	// FIXME could try pragma unroll here as well.
 	
@@ -260,9 +262,13 @@ correlate_pl_kernel_S128(int *V_out, const ulong *pl_mask, uint N128)
     //
     //  where a = 256*wx + 128
     //        b = 32*wx*(wx+1) + 64*wy
-			 
+
+    // int V_out[Tout][F][8*17][8][8]
     int a = 256*wx + 128;
-    V_out += 32*wx*(wx+1) + 64*wy;
+    int b = 32*wx*(wx+1) + 64*wy;
+    ulong tf = ulong(tout)*ulong(F) + f;
+    V_out += tf*(8*17*64);
+    V_out += b;
 
     // Off-diagonals (I > J).
     // Pointer offsets are (a*I + 512*I^2 + 256*J).
