@@ -134,7 +134,7 @@ correlate_pl_kernel_S16(int *V_out, const ulong *pl_mask, const uint *rfimask, i
 
     // uint rfimask[F][T/32], note 'rfimask_fstride'.
     rfimask += ulong(f) * ulong(rfimask_fstride);
-    rfimask += (threadIdx.x & 31);
+    rfimask += ((tout * N128) << 2) + (threadIdx.x & 31);
     
     uint rfi = 0;
     int pl[2][1];
@@ -204,7 +204,7 @@ correlate_pl_kernel_S128(int *V_out, const ulong *pl_mask, const uint *rfimask, 
 
     // uint rfimask[F][T/32], note 'rfimask_fstride'.
     rfimask += ulong(f) * ulong(rfimask_fstride);
-    rfimask += (threadIdx.x & 31);
+    rfimask += ((tout * N128) << 2) + (threadIdx.x & 31);
 
     // MMA inputs/outputs (55 registers/thread)
     uint rfi = 0;
