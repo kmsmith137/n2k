@@ -33,6 +33,7 @@ int main(int argc, char **argv)
 {
     // (T,F) artificially increased.
     time_correlate_pl("CHORD pathfinder", 192*1024, 64*1024, 16, 128*48, 5);
+    time_correlate_pl("Full CHORD", 48*1024, 32*1024, 128, 128*48, 5);
     
     return 0;
 }
