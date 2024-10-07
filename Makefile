@@ -34,9 +34,9 @@ HFILES = \
 OFILES = \
   src_lib/Correlator.o \
   src_lib/SkKernel.o \
-  src_lib/correlate_pl_mask.o \
   src_lib/internals.o \
   src_lib/kernel_table.o \
+  src_lib/pl_1bit_correlator.o \
   src_lib/precompute_offsets.o \
   src_lib/s0_kernel.o \
   src_lib/s012_station_downsample.o \
