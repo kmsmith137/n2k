@@ -37,7 +37,7 @@ namespace n2k {
 // at the appropriate 16-by-128 submatrix, plus the 'pl_lane_offset' (see below) so that
 // each lane points to a distinct 64-bit part of the 16-by-128 submatrix.
 
-__device__ inline void read_pl_16_128(int pl[2][1], const ulong *pl_adjusted)
+__device__ inline void read_pl_16_128(int pl[2][1], const ulong *pl_adjusted, uint rfi, uint n128)
 {
     // pl_lane_offset() has been written so that dereferencing the pointer gives
     // the following register assigment:
@@ -51,8 +51,13 @@ __device__ inline void read_pl_16_128(int pl[2][1], const ulong *pl_adjusted)
     // b0 b1 b2 b3 b4 <-> j0 j1 j2 j3 j4    t0 t1 t2 t3 t4 <-> j5 j6 i0 i1 i2    r <-> i3
 
     warp_transpose(t.x, t.y, 1);
-    pl[0][0] = t.x;
-    pl[1][0] = t.y;
+
+    // Get RFI mask from appropriate thread.
+    uint dst_lane = (threadIdx.x & 3) + (n128 << 2);
+    rfi = __shfl_sync(FULL_MASK, rfi, dst_lane);
+    
+    pl[0][0] = t.x & rfi;
+    pl[1][0] = t.y & rfi;
 }
 
 // The following per-lane offset is applied to the 'pl' global memory pointer,
@@ -111,7 +116,7 @@ __device__ inline void write_8_16(int *v_out, int v[2][2])
 
 
 __global__ void __launch_bounds__(128,8)
-correlate_pl_kernel_S16(int *V_out, const ulong *pl_mask, int Tout, int F, uint N128)
+correlate_pl_kernel_S16(int *V_out, const ulong *pl_mask, const uint *rfimask, int rfimask_fstride, int Tout, int F, uint N128)
 {
     // Assumes blockDim = {32,Wy,Wz} where (Wy*Wz)=4.
     
@@ -126,15 +131,25 @@ correlate_pl_kernel_S16(int *V_out, const ulong *pl_mask, int Tout, int F, uint 
     const uint t128_stride = (2*F) * S;  // 64-bit (ulong) stride
     pl_mask += ulong(tout) * ulong(N128) * ulong(t128_stride);
     pl_mask += (f * S) + pl_lane_offset(F*S);
+
+    // uint rfimask[F][T/32], note 'rfimask_fstride'.
+    rfimask += ulong(f) * ulong(rfimask_fstride);
+    rfimask += (threadIdx.x & 31);
     
+    uint rfi = 0;
     int pl[2][1];
     int v[3][2];
 
     v[0][0] = v[0][1] = v[1][0] = v[1][1] = v[2][0] = v[2][1] = 0;
-    
-    while (N128 > 0) {
+
+    for (uint n128 = 0; n128 < N128; n128++) {
+	if ((n128 & 7) == 0) {
+	    rfi = *rfimask;
+	    rfimask += 32;
+	}
+
 	// Read 16-by-128 PL-submatrix.
-	read_pl_16_128(pl, pl_mask);
+	read_pl_16_128(pl, pl_mask, rfi, n128);
 
 	// Accumulate 16-by-16 V-matrix.
 	mma_b1_m8_n8_k128(v[0], pl[0], pl[0], v[0]);
@@ -142,7 +157,6 @@ correlate_pl_kernel_S16(int *V_out, const ulong *pl_mask, int Tout, int F, uint 
 	mma_b1_m8_n8_k128(v[2], pl[1], pl[1], v[2]);
 	
 	pl_mask += t128_stride;
-	N128--;
     }
     
     // int V_out[Tout][F][3][8][8]
@@ -167,7 +181,7 @@ __device__ inline void multiply_8_16(int v[2][2], int plx[1], int ply[2][1])
 
 
 __global__ void __launch_bounds__(256,2)
-correlate_pl_kernel_S128(int *V_out, const ulong *pl_mask, uint N128)
+correlate_pl_kernel_S128(int *V_out, const ulong *pl_mask, const uint *rfimask, int rfimask_fstride, uint N128)
 {
     constexpr int S = 128;
     const uint tout = blockIdx.z;
@@ -188,7 +202,12 @@ correlate_pl_kernel_S128(int *V_out, const ulong *pl_mask, uint N128)
     pl_mask += ulong(tout) * ulong(N128) * ulong(t128_stride);
     pl_mask += (f * S) + (w * 16) + pl_lane_offset(F*S);
 
-    // MMA inputs/outputs (54 registers/thread!)
+    // uint rfimask[F][T/32], note 'rfimask_fstride'.
+    rfimask += ulong(f) * ulong(rfimask_fstride);
+    rfimask += (threadIdx.x & 31);
+
+    // MMA inputs/outputs (55 registers/thread)
+    uint rfi = 0;
     int pl_in[2][1];
     int plx[4][1];
     int ply[4][2][1];
@@ -206,9 +225,14 @@ correlate_pl_kernel_S128(int *V_out, const ulong *pl_mask, uint N128)
     v[8][0][0] = v[8][0][1] = v[8][1][0] = v[8][1][1] = 0;
     v[9][0][0] = v[9][0][1] = v[9][1][0] = v[9][1][1] = 0;
     
-    while (N128 > 0) {
+    for (uint n128 = 0; n128 < N128; n128++) {
+	if ((n128 & 7) == 0) {
+	    rfi = *rfimask;
+	    rfimask += 32;
+	}
+
 	// Read 16-by-128 submatrix from global memory.
-	read_pl_16_128(pl_in, pl_mask);
+	read_pl_16_128(pl_in, pl_mask, rfi, n128);
 
 	// Write 16-by-128 submatrix to shared memory.
 	shmem[64*w + laneId] = pl_in[0][0];
@@ -250,7 +274,6 @@ correlate_pl_kernel_S128(int *V_out, const ulong *pl_mask, uint N128)
 	multiply_8_16(v[9], plx[3], ply[3]);
 
 	pl_mask += t128_stride;
-	N128--;
     }
 
     // Write to global memory.
@@ -302,11 +325,13 @@ correlate_pl_kernel_S128(int *V_out, const ulong *pl_mask, uint N128)
 // -------------------------------------------------------------------------------------------------
 
 
-void launch_correlate_pl_kernel(int *V_out, const ulong *pl_mask, long T, long F, long S, long Nds, cudaStream_t stream)
+void launch_correlate_pl_kernel(int *V_out, const ulong *pl_mask, const uint *rfimask, long rfimask_fstride, long T, long F, long S, long Nds, cudaStream_t stream)
 {
     // FIXME asserts -> exceptions
     assert(V_out != nullptr);
     assert(pl_mask != nullptr);
+    assert(rfimask != nullptr);
+    assert(rfimask_fstride >= (T/32));
     assert(T > 0);
     assert(F > 0);
     assert(Nds > 0);
@@ -324,14 +349,14 @@ void launch_correlate_pl_kernel(int *V_out, const ulong *pl_mask, long T, long F
 	
 	correlate_pl_kernel_S16
 	    <<< nblocks, nthreads, 0, stream >>>
-	    (V_out, pl_mask, Tout, F, N128);
+	    (V_out, pl_mask, rfimask, rfimask_fstride, Tout, F, N128);
     }
     else if (S == 128) {
 	dim3 nblocks = { 1, uint(F), uint(Tout) };
 	
 	correlate_pl_kernel_S128
 	    <<< nblocks, 256, 0, stream >>>
-	    (V_out, pl_mask, N128);
+	    (V_out, pl_mask, rfimask, rfimask_fstride, N128);
     }
     else
 	throw runtime_error("launch_correlate_pl_kernel: currently, only S=16 and S=128 are implemented");
@@ -340,27 +365,31 @@ void launch_correlate_pl_kernel(int *V_out, const ulong *pl_mask, long T, long F
 }
 
 
-void launch_correlate_pl_kernel(Array<int> &V_out, const Array<ulong> &pl_mask, long Nds, cudaStream_t stream)
+void launch_correlate_pl_kernel(Array<int> &V_out, const Array<ulong> &pl_mask, const Array<uint> &rfimask, long Nds, cudaStream_t stream)
 {
     // pl_mask shape = (T/64, F, S)
     // V_out shape = (T/Nds, F, ntiles, 8, 8)
+    // rfimask shape = (F, T/32)
     
-    check_array(pl_mask, "launch_correlate_pl_kernel", "pl_mask", 3, true);  // contiguous=true
-    check_array(V_out, "launch_correlate_pl_kernel", "V_out", 5, true);      // contiguous=true
+    check_array(V_out, "launch_correlate_pl_kernel", "V_out", 5, true);       // contiguous=true
+    check_array(pl_mask, "launch_correlate_pl_kernel", "pl_mask", 3, true);   // contiguous=true
+    check_array(rfimask, "launch_correlate_pl_kernel", "rfimask", 2, false);  // contiguous=false
     
     long T = 64 * pl_mask.shape[0];
     long F = pl_mask.shape[1];
     long S = pl_mask.shape[2];
-
-    // FIXME asserts -> exceptions
-    assert((S % 16) == 0);
     long ntiles = ((S/8) * ((S/8) + 1)) / 2;
 
+    // FIXME asserts -> exceptions
     assert(Nds > 0);
+    assert((S & 8) == 0);
+    assert((T % 32) == 0);
     assert((T % Nds) == 0);
     assert(V_out.shape_equals({T/Nds,F,ntiles,8,8}));
+    assert(rfimask.shape_equals({F,T/32}));
+    assert(rfimask.strides[1] == 1);
     
-    launch_correlate_pl_kernel(V_out.data, pl_mask.data, T, F, S, Nds, stream);
+    launch_correlate_pl_kernel(V_out.data, pl_mask.data, rfimask.data, rfimask.strides[0], T, F, S, Nds, stream);
 }
 
 

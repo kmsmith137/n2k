@@ -9,11 +9,26 @@ namespace n2k {
 #endif
 
 
-extern void launch_correlate_pl_kernel(int *V_out, const ulong *pl_mask, long T, long F, long S, long Nds, cudaStream_t stream=0);
+extern void launch_correlate_pl_kernel(
+    int *V_out,
+    const ulong *pl_mask,
+    const uint *rfimask,
+    long rfimask_fstride,
+    long T,
+    long F,
+    long S,
+    long Nds,
+    cudaStream_t stream = 0);
+
 
 // pl_mask shape = (T/64, F, S)
 // V_out shape = (T/Nds, F, ntiles, 8, 8)
-extern void launch_correlate_pl_kernel(gputils::Array<int> &V_out, const gputils::Array<ulong> &pl_mask, long Nds, cudaStream_t stream=0);
+extern void launch_correlate_pl_kernel(
+    gputils::Array<int> &V_out,
+    const gputils::Array<ulong> &pl_mask,
+    const gputils::Array<uint> &rfimask,
+    long Nds,
+    cudaStream_t stream = 0);
 
 
 } // namespace n2k

@@ -14,13 +14,14 @@ static void time_correlate_pl(const string &name, long T, long F, long S, long N
     long ntiles = ((S/8) * ((S/8)+1)) / 2;
 
     Array<ulong> pl({T/64, F, S}, af_gpu | af_zero);
+    Array<uint> rfimask({F, T/32}, af_gpu | af_zero);
     Array<int> v({Tout,F,ntiles,8,8}, af_gpu | af_zero);
     double gb = 1.0e-9 * ninner * (8*pl.size + 4*v.size);
 
     auto callback = [&](const CudaStreamPool &pool, cudaStream_t stream, int istream)
     {
 	for (long i = 0; i < ninner; i++)
-	    launch_correlate_pl_kernel(v, pl, Nds, stream);  // calls CUDA_PEEK()
+	    launch_correlate_pl_kernel(v, pl, rfimask, Nds, stream);  // calls CUDA_PEEK()
     };
 
     CudaStreamPool sp(callback, nouter, 1, name);
