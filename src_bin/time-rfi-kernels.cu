@@ -1,5 +1,4 @@
-#include "../include/n2k/s012_kernels.hpp"
-#include "../include/n2k/SkKernel.hpp"
+#include "../include/n2k/rfi_kernels.hpp"
 
 #include <gputils/CudaStreamPool.hpp>
 

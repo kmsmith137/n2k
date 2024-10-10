@@ -1,5 +1,5 @@
 #include "../include/n2k/pl_kernels.hpp"
-#include "../include/n2k/internals.hpp"
+#include "../include/n2k/internals/internals.hpp"
 
 #include <gputils/cuda_utils.hpp>
 #include <gputils/string_utils.hpp>

@@ -3,8 +3,8 @@
 #include <gputils.hpp>
 
 #include "../include/n2k/Correlator.hpp"
-#include "../include/n2k/CorrelatorKernel.hpp"
-#include "../include/n2k/internals.hpp"
+#include "../include/n2k/internals/CorrelatorKernel.hpp"
+#include "../include/n2k/internals/internals.hpp"
 
 using namespace std;
 using namespace gputils;

@@ -1,7 +1,7 @@
 #ifndef _N2K_COORELATOR_KERNEL_HPP
 #define _N2K_CORRELATOR_KERNEL_HPP
 
-#include "Correlator.hpp"
+#include "../Correlator.hpp"
 #include "device_inlines.hpp"                // lop3(), blend(), FULL_MASK
 #include <gputils/constexpr_functions.hpp>   // constexpr_is_divisible()
 

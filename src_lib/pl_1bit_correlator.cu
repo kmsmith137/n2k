@@ -1,6 +1,6 @@
 #include "../include/n2k/pl_kernels.hpp"
-#include "../include/n2k/internals.hpp"
-#include "../include/n2k/device_inlines.hpp"
+#include "../include/n2k/internals/internals.hpp"
+#include "../include/n2k/internals/device_inlines.hpp"
 
 #include <gputils/cuda_utils.hpp>
 #include <gputils/device_mma.hpp>

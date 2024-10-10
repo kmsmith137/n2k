@@ -1,5 +1,4 @@
-#include "../include/n2k.hpp"
-#include "../include/n2k/interpolation.hpp"
+#include "../include/n2k/rfi_kernels.hpp"
 
 #include <iostream>
 #include <gputils/cuda_utils.hpp>

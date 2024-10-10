@@ -9,6 +9,8 @@ namespace n2k {
 #endif
 
 
+// NOTE: this code is still under development -- you shouldn't use it in kotekan just yet!
+
 extern void launch_pl_mask_expander(ulong *pl_out, const ulong *pl_in, long Tout, long Fout, long S, cudaStream_t stream=0);
 
 extern void launch_pl_mask_expander(gputils::Array<ulong> &pl_out, const gputils::Array<ulong> &pl_in, cudaStream_t stream=0);

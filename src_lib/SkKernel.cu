@@ -1,8 +1,8 @@
-#include "../include/n2k/SkKernel.hpp"
+#include "../include/n2k/rfi_kernels.hpp"
 
-#include "../include/n2k/bad_feed_mask.hpp"
-#include "../include/n2k/interpolation.hpp"
-#include "../include/n2k/sk_globals.hpp"
+#include "../include/n2k/internals/bad_feed_mask.hpp"
+#include "../include/n2k/internals/interpolation.hpp"
+#include "../include/n2k/internals/sk_globals.hpp"
 
 #include <gputils/cuda_utils.hpp>
 

@@ -1,6 +1,6 @@
-#include "../include/n2k/s012_kernels.hpp"
-#include "../include/n2k/bad_feed_mask.hpp"
-#include "../include/n2k/internals.hpp"
+#include "../include/n2k/rfi_kernels.hpp"
+#include "../include/n2k/internals/bad_feed_mask.hpp"
+#include "../include/n2k/internals/internals.hpp"
 
 #include <gputils/cuda_utils.hpp>
 
