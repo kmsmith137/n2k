@@ -86,8 +86,11 @@ __device__ inline int pl_lane_offset(uint t64_stride)
 // -------------------------------------------------------------------------------------------------
 
 
-// FIXME comment this
-//   r <-> k0      t0 t1 t2 t3 t4 <-> k1 k2 i0 i1 i2
+// Write one 8-by-8 tile of the 'counts' array C_{ik} to global memory.
+// The tile is stored in tensor core ordering:
+//
+//    r <-> k0      t0 t1 t2 t3 t4 <-> k1 k2 i0 i1 i2
+
 __device__ inline void write_8_8(int *counts, int v[2])
 {
     int2 t;
@@ -99,10 +102,15 @@ __device__ inline void write_8_8(int *counts, int v[2])
 }
 
 
+// Write two 8-by-8 tiles of the 'counts' array C_{ik} to global memory.
+//
+// This needs a little explanation! We assume that the two tiles differ by k=16
+// (not k=8 as might be expected), and that both tiles are in the lower triangle.
+
 __device__ inline void write_8_16(int *counts, int v[2][2])
 {
     write_8_8(counts, v[0]);
-    write_8_8(counts + 128, v[1]);
+    write_8_8(counts + 128, v[1]);   // pointer offset is 128 if tiles differ by k=16
 }
 
 
@@ -302,7 +310,7 @@ correlate_pl_kernel_S128(int *counts, const ulong *pl_mask, const uint *rfimask,
     write_8_16(counts + 2*a + 4*512 + 256, v[4]);    // I=2, J=1
     write_8_16(counts + 3*a + 9*512, v[6]);          // I=3, J=0
     write_8_16(counts + 3*a + 9*512 + 256, v[7]);    // I=3, J=1
-    write_8_16(counts + 3*a + 9*512 + 2*256, v[8]);    // I=3, J=2
+    write_8_16(counts + 3*a + 9*512 + 2*256, v[8]);  // I=3, J=2
 
     // Diagonals (I = J).
     // We only write if (wx >= wy+2R).
@@ -328,16 +336,26 @@ correlate_pl_kernel_S128(int *counts, const ulong *pl_mask, const uint *rfimask,
 
 void launch_pl_1bit_correlator(int *counts, const ulong *pl_mask, const uint *rfimask, long rfimask_fstride, long T, long F, long Sds, long Nds, cudaStream_t stream)
 {
-    // FIXME asserts -> exceptions
-    assert(counts != nullptr);
-    assert(pl_mask != nullptr);
-    assert(rfimask != nullptr);
-    assert(rfimask_fstride >= (T/32));
-    assert(T > 0);
-    assert(F > 0);
-    assert(Nds > 0);
-    assert((Nds % 128) == 0);
-    assert((T % Nds) == 0);
+    if (!counts)
+	throw runtime_error("launch_pl_1bit_correlator: 'counts' must be non-NULL");
+    if (!pl_mask)
+	throw runtime_error("launch_pl_1bit_correlator: 'pl_mask' must be non-NULL");
+    if (!rfimask)
+	throw runtime_error("launch_pl_1bit_correlator: 'rfimask' must be non-NULL");
+    if (rfimask_fstride < (T/32))	
+	throw runtime_error("launch_pl_1bit_correlator: expected rfimask_fstride >= T/32");
+    if (T <= 0)
+	throw runtime_error("launch_pl_1bit_correlator: expected T > 0");
+    if (T <= 0)
+	throw runtime_error("launch_pl_1bit_correlator: expected T > 0");
+    if (F <= 0)
+	throw runtime_error("launch_pl_1bit_correlator: expected F > 0");
+    if (Nds <= 0)
+	throw runtime_error("launch_pl_1bit_correlator: expected Nds > 0");
+    if (Nds % 128)
+	throw runtime_error("launch_pl_1bit_correlator: expected Nds to be a multiple of 128 (could be relaxed)");
+    if (T % Nds)
+	throw runtime_error("launch_pl_1bit_correlator: expected T to be a multiple of Nds");
 
     // FIXME 32-bit overflow checks
     
@@ -359,8 +377,11 @@ void launch_pl_1bit_correlator(int *counts, const ulong *pl_mask, const uint *rf
 	    <<< nblocks, 256, 0, stream >>>
 	    (counts, pl_mask, rfimask, rfimask_fstride, N128);
     }
-    else
-	throw runtime_error("launch_pl_1bit_correlator: currently, only Sds=16 and Sds=128 are implemented");
+    else {
+	throw runtime_error("launch_pl_1bit_correlator: Currently, only Sds=16 and Sds=128 are implemented."
+			    " These values correspond to the CHORD pathfinder, and full CHORD. Let me know"
+			    " if you need more generality");
+    }
     
     CUDA_PEEK("correlate_pl_kernel");
 }
@@ -381,14 +402,33 @@ void launch_pl_1bit_correlator(Array<int> &counts, const Array<ulong> &pl_mask, 
     long Sds = pl_mask.shape[2];
     long ntiles = ((Sds/8) * ((Sds/8) + 1)) / 2;
 
-    // FIXME asserts -> exceptions
-    assert(Nds > 0);
-    assert((Sds & 7) == 0);
-    assert((T % 32) == 0);
-    assert((T % Nds) == 0);
-    assert(counts.shape_equals({T/Nds,F,ntiles,8,8}));
-    assert(rfimask.shape_equals({F,T/32}));
-    assert(rfimask.strides[1] == 1);
+    if (Nds <= 0)
+	throw runtime_error("launch_pl_1bit_correlator: expected Nds > 0");
+    if (Nds % 128)
+	throw runtime_error("launch_pl_1bit_correlator: expected Nds to be a multiple of 128 (could be relaxed)");
+    if (T % Nds)
+	throw runtime_error("launch_pl_1bit_correlator: expected T to be a multiple of Nds");
+    if (Sds % 8)
+	throw runtime_error("launch_pl_1bit_correlator: expected Sds to be a multiple of 8");;
+
+    if (!counts.shape_equals({T/Nds,F,ntiles,8,8})) {
+	stringstream ss;
+	ss << "launch_pl_1bit_correlator: counts.shape (=" << counts.shape_str() << ")."
+	   << " Based on pl_mask.shape (=" << pl_mask.shape_str() << ") and Nds=" << Nds
+	   << ", expected shape (" << (T/Nds) << "," << F << "," << ntiles << ",8,8)";
+	throw runtime_error(ss.str());
+    }
+
+    if (!rfimask.shape_equals({F,T/32})) {
+	stringstream ss;
+	ss << "launch_pl_1bit_correlator: rfimask.shape (=" << rfimask.shape_str() << ")."
+	   << " Based on pl_mask.shape (=" << pl_mask.shape_str()
+	   << ", expected shape (" << F << "," << (T/32) << ")";
+	throw runtime_error(ss.str());
+    }
+
+    if (rfimask.strides[1] != 1)
+	throw runtime_error("launch_pl_1bit_correlator: expected inner (time) axis of rfimask to be contiguous");
     
     launch_pl_1bit_correlator(counts.data, pl_mask.data, rfimask.data, rfimask.strides[0], T, F, Sds, Nds, stream);
 }

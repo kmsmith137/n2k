@@ -82,15 +82,20 @@ __global__ void pl_mask_expand_kernel(uint *pl_out, const uint *pl_in, int F, in
 
 void launch_pl_mask_expander(ulong *pl_out, const ulong *pl_in, long Tout, long Fout, long Sds, cudaStream_t stream)
 {
-    // FIXME asserts -> exceptions.
-    assert(pl_out != nullptr);
-    assert(pl_in != nullptr);
-    assert(Tout > 0);
-    assert(Fout > 0);
-    assert(Sds > 0);
-
-    assert((Tout % 128) == 0);
-    assert((Sds % 16) == 0);
+    if (!pl_out)
+	throw runtime_error("launch_pl_mask_expander: 'pl_out' must be non-NULL");
+    if (!pl_in)
+	throw runtime_error("launch_pl_mask_expander: 'pl_in' must be non-NULL");
+    if (Tout <= 0)
+	throw runtime_error("launch_pl_mask_expander: expected Tout > 0");
+    if (Fout <= 0)
+	throw runtime_error("launch_pl_mask_expander: expected Fout > 0");
+    if (Sds <= 0)
+	throw runtime_error("launch_pl_mask_expander: expected Sds > 0");
+    if (Tout % 128)
+	throw runtime_error("launch_pl_mask_expander: expected Tout to be a multiple of 128");
+    if (Sds % 16)
+	throw runtime_error("launch_pl_mask_expander: expected Sds to be a multiple of 16");
 
     // FIXME check for 32-bit overflows.
     
