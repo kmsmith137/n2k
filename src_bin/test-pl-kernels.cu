@@ -56,15 +56,15 @@ inline ulong rand_ulong()
 // ------------------------------------------------------------------------------------------------
 
 
-static void test_pl_mask_expander(long Tout, long Fout, long S)
+static void test_pl_mask_expander(long Tout, long Fout, long Sds)
 {
-    cout << "test_pl_mask_expander: Tout=" << Tout << ", Fout=" << Fout << ", S=" << S << endl;
+    cout << "test_pl_mask_expander: Tout=" << Tout << ", Fout=" << Fout << ", Sds=" << Sds << endl;
 
     long Tin = Tout/2;
     long Fin = (Fout+3)/4;
-    Array<ulong> pl_in_cpu({Tin/64,Fin,S}, af_rhost);
-    Array<ulong> pl_out_cpu({Tout/64,Fout,S}, af_uhost);
-    Array<ulong> pl_out_gpu({Tout/64,Fout,S}, af_gpu | af_guard);
+    Array<ulong> pl_in_cpu({Tin/64,Fin,Sds}, af_rhost);
+    Array<ulong> pl_out_cpu({Tout/64,Fout,Sds}, af_uhost);
+    Array<ulong> pl_out_gpu({Tout/64,Fout,Sds}, af_gpu | af_guard);
 
     for (long i = 0; i < pl_in_cpu.size; i++)
 	pl_in_cpu.data[i] = rand_ulong();
@@ -77,7 +77,7 @@ static void test_pl_mask_expander(long Tout, long Fout, long S)
 
     for (long tin64 = 0; tin64 < (Tin/64); tin64++) {
 	for (long fin = 0; fin < Fin; fin++) {
-	    for (long s = 0; s < S; s++) {
+	    for (long s = 0; s < Sds; s++) {
 		ulong x = pl_in_cpu.at({tin64,fin,s});
 		
 		ulong y0, y1;
@@ -98,12 +98,12 @@ static void test_pl_mask_expander(long Tout, long Fout, long S)
 static void test_pl_mask_expander()
 {
     for (int n = 0; n < 200; n++) {
-	// (Tout/128, Fout, S/16)
+	// (Tout/128, Fout, Sds/16)
 	vector<ssize_t> v = random_integers_with_bounded_product(3, 20000);
 	long Tout = 128 * v[0];
 	long Fout = v[1];
-	long S = 16 * v[2];
-	test_pl_mask_expander(Tout, Fout, S);
+	long Sds = 16 * v[2];
+	test_pl_mask_expander(Tout, Fout, Sds);
     }
 }
 
@@ -111,20 +111,20 @@ static void test_pl_mask_expander()
 // ------------------------------------------------------------------------------------------------
 
 
-static void test_pl_1bit_correlator(long T, long F, long S, long Nds, long rfimask_fstride)
+static void test_pl_1bit_correlator(long T, long F, long Sds, long Nds, long rfimask_fstride)
 {
-    cout << "test_pl_1bit_correlator: T=" << T << ", F=" << F << ", S=" << S
+    cout << "test_pl_1bit_correlator: T=" << T << ", F=" << F << ", Sds=" << Sds
 	 << ", Nds=" << Nds << ", rfimask_fstride=" << rfimask_fstride << endl;
     
     assert(rfimask_fstride >= T/32);
 
     long Tout = T / Nds;
-    long ntiles = ((S/8) * ((S/8)+1)) / 2;
+    long ntiles = ((Sds/8) * ((Sds/8)+1)) / 2;
     
-    Array<ulong> pl_cpu({T/64,F,S}, af_rhost | af_zero);
+    Array<ulong> pl_cpu({T/64,F,Sds}, af_rhost | af_zero);
     Array<uint> rfimask_cpu({F,T/32}, {rfimask_fstride,1}, af_rhost | af_zero);
-    Array<int> v_cpu({Tout,F,ntiles,8,8}, af_uhost);
-    Array<int> v_gpu({Tout,F,ntiles,8,8}, af_gpu | af_guard);
+    Array<int> counts_cpu({Tout,F,ntiles,8,8}, af_uhost);
+    Array<int> counts_gpu({Tout,F,ntiles,8,8}, af_gpu | af_guard);
 
     for (long i = 0; i < pl_cpu.size; i++)
 	pl_cpu.data[i] = rand_ulong();
@@ -135,26 +135,26 @@ static void test_pl_1bit_correlator(long T, long F, long S, long Nds, long rfima
     
     Array<ulong> pl_gpu = pl_cpu.to_gpu();
     Array<uint> rfimask_gpu = rfimask_cpu.to_gpu();
-    launch_pl_1bit_correlator(v_gpu, pl_gpu, rfimask_gpu, Nds);
+    launch_pl_1bit_correlator(counts_gpu, pl_gpu, rfimask_gpu, Nds);
     CUDA_CALL(cudaDeviceSynchronize());
 
     // CPU implementation of correlate_pl_kernel() starts here.
 
     int N64 = Nds / 64;
-    int t64_stride = F*S;
+    int t64_stride = F*Sds;
     
     for (long tout = 0; tout < Tout; tout++) {
 	for (long f = 0; f < F; f++) {
-	    const ulong *pl_tf = &pl_cpu.at({tout*N64,f,0});  // shape (N64,S), strides (t64_stride, 1)
-	    const ulong *rfi_tf = (const ulong *) &rfimask_cpu.at({f,tout*N64*2});      // shape (N64,)
-	    int *v_tf = &v_cpu.at({tout,f,0,0,0});                    // shape (ntiles,8,8), contiguous
+	    const ulong *pl_tf = &pl_cpu.at({tout*N64,f,0});  // shape (N64,Sds), strides (t64_stride, 1)
+	    const ulong *rfi_tf = (const ulong *) &rfimask_cpu.at({f,tout*N64*2});        // shape (N64,)
+	    int *counts_tf = &counts_cpu.at({tout,f,0,0,0});            // shape (ntiles,8,8), contiguous
 	    
-	    for (long ixtile = 0; ixtile < (S/8); ixtile++) {
+	    for (long ixtile = 0; ixtile < (Sds/8); ixtile++) {
 		for (long iytile = 0; iytile <= ixtile; iytile++) {
 		    long itile = (ixtile*(ixtile+1))/2 + iytile;
 		    const ulong *plx = pl_tf + 8*ixtile;   // shape (N64,8), strides (t64_stride, 1)
 		    const ulong *ply = pl_tf + 8*iytile;   // shape (N64,8), strides (t64_stride, 1)
-		    int *vtile = v_tf + 64*itile;          // shape (8,8), contiguous
+		    int *ctile = counts_tf + 64*itile;     // shape (8,8), contiguous
 
 		    for (int i = 0; i < 8; i++) {
 			for (int j = 0; j < 8; j++) {
@@ -165,7 +165,7 @@ static void test_pl_1bit_correlator(long T, long F, long S, long Nds, long rfima
 				ulong rfi = rfi_tf[t64];
 				v += bit_count(x & y & rfi);
 			    }
-			    vtile[8*i+j] = v;
+			    ctile[8*i+j] = v;
 			}
 		    }
 		}
@@ -173,23 +173,23 @@ static void test_pl_1bit_correlator(long T, long F, long S, long Nds, long rfima
 	}
     }
 
-    gputils::assert_arrays_equal(v_cpu, v_gpu, "cpu", "gpu", {"tout","f","tile","i","j"});
+    gputils::assert_arrays_equal(counts_cpu, counts_gpu, "cpu", "gpu", {"tout","f","tile","i","j"});
 }
 
 
 static void test_pl_1bit_correlator()
 {
     for (int n = 0; n < 100; n++) {
-	long S = rand_int(0,2) ? 16 : 128;  // for now
+	long Sds = rand_int(0,2) ? 16 : 128;  // for now
 	
 	// v = (T/Nds, F, Nds/128)
-	vector<ssize_t> v = gputils::random_integers_with_bounded_product(3, 10*1000*1000/(S*S));
+	vector<ssize_t> v = gputils::random_integers_with_bounded_product(3, 10*1000*1000/(Sds*Sds));
 	long Nds = v[2] * 128;
 	long F = v[1];
 	long T = v[0] * Nds;
 	long rfimask_fstride = rand_int(T/32, T/16);
 	
-	test_pl_1bit_correlator(T, F, S, Nds, rfimask_fstride);
+	test_pl_1bit_correlator(T, F, Sds, Nds, rfimask_fstride);
     }
 }
 
