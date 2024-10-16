@@ -414,9 +414,7 @@ static void test_load_bias_coeffs()
 
 __global__ void gpu_interpolation_test_kernel(float *b_out, float *s_out, const float *x_in, const float *y_in, const float *gmem_bsigma_coeffs)
 {
-    constexpr int nb = sk_globals::bias_nx;
-    constexpr int ns = sk_globals::sigma_nx;
-    __shared__ float shmem_bsigma_coeffs[12*nb + 9*ns];
+    __shared__ float shmem_bsigma_coeffs[bsigma_shmem_nelts];
 
     unpack_bias_sigma_coeffs(gmem_bsigma_coeffs, shmem_bsigma_coeffs);
     
