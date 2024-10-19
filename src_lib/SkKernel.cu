@@ -422,7 +422,7 @@ void SkKernel::check_params(const SkKernel::Params &params)
 	throw runtime_error(ss.str());
     }
 
-    if (single_feed_min_good_frac < x-0.01) {
+    if (single_feed_min_good_frac < x - 1.0e-6) {
 	stringstream ss;
 	ss << "SkKernel::Params::single_feed_min_good_frac=" << single_feed_min_good_frac
 	   << " was specified, and min allowed value (for Nds=" << Nds << ") is " << x
@@ -431,7 +431,7 @@ void SkKernel::check_params(const SkKernel::Params &params)
 	throw runtime_error(ss.str());
     }
 
-    if (mu_min < n2k::sk_globals::mu_min-0.01) {
+    if (mu_min < n2k::sk_globals::mu_min - 1.0e-6) {
 	stringstream ss;
 	ss << "SkKernel::Params::mu_min=" << mu_min
 	   << " was specified, and min allowed value is " << mu_min
@@ -440,7 +440,7 @@ void SkKernel::check_params(const SkKernel::Params &params)
 	throw runtime_error(ss.str());
     }
 
-    if (mu_max > n2k::sk_globals::mu_max+0.01) {
+    if (mu_max > n2k::sk_globals::mu_max + 1.0e-6) {
 	stringstream ss;
 	ss << "SkKernel::Params::mu_max=" << mu_max
 	   << " was specified, and max allowed value is " << mu_max

@@ -2,6 +2,7 @@
 #define _N2K_RFI_KERNELS_HPP
 
 #include <gputils/Array.hpp>
+#include <iomanip>  // std::setw, std::left
 
 namespace n2k {
 #if 0
@@ -287,8 +288,12 @@ struct SkKernel
 {
     // High-level parameters for the SkKernel.
     // See overleaf for precise descriptions.
-    // We might define kotekan yaml config parameters which are in one-to-one
-    // correspondence with these parameters.
+    // We might define kotekan yaml config params for some/all of these.
+    //
+    // The 'Nds' parameter is the total downsampling factor between the baseband data
+    // and the S-array (input to SK-kernel). Note that there are two SK-kernels in the
+    // pipeline with different time resolutions (~1ms and ~30ms), and these SK-kernels
+    // will have different Nds parameters.
     
     struct Params {
 	double sk_rfimask_sigmas = 0.0;             // RFI masking threshold in "sigmas" (only used if out_rfimask != NULL)
@@ -296,7 +301,7 @@ struct SkKernel
 	double feed_averaged_min_good_frac = 0.0;   // For feed-averaged SK-statistic (threshold for validity)
 	double mu_min = 0.0;                        // For single-feed SK-statistic (threshold for validity)
 	double mu_max = 0.0;                        // For single-feed SK-statistic (threshold for validity)
-	long Nds = 0;                               // Downsampling factor used to construct S012 array (i.e. SK-kernel input array)
+	long Nds = 0;                               // Downsampling factor used to construct S012 array (see above).
     };
 
     // As noted above, the SkKernel constructor allocates a few-KB array on the GPU,

@@ -57,15 +57,25 @@ struct SkTracker
 
 struct RunState
 {
-    // Caller must initialize these members before calling init().
+    // Caller must initialize these members before calling init(), including the following members of sk_params:
+    //
+    //   double sk_rfimask_sigmas = 0.0;             // RFI masking threshold in "sigmas"
+    //   double single_feed_min_good_frac = 0.0;     // For single-feed SK-statistic (threshold for validity)
+    //   double feed_averaged_min_good_frac = 0.0;   // For feed-averaged SK-statistic (threshold for validity)
+    //   double mu_min = 0.0;                        // For single-feed SK-statistic (threshold for validity)
+    //   double mu_max = 0.0;                        // For single-feed SK-statistic (threshold for validity)
+    //
+    // The MCs will run two SkKernels, a "fast-SK" (params.Nds = Nds1) and a "slow-SK" (params.Nds = Nds1 * Nds2).
+
     string name;
-    long T = 0;
-    long F = 0;
-    long S = 0;
-    long Nds1 = 0;      // Baseband -> 1 ms
-    long Nds2 = 0;      // 1 ms -> 30 ms
-    double rms = 0.0;
+    long T = 0;         // Number of baseband time samples per frame
+    long F = 0;         // Number of freq channels
+    long S = 0;         // Number of stations
+    long Nds1 = 0;      // Downsampling factor baseband -> 1 ms
+    long Nds2 = 0;      // Downsampling factor 1 ms -> 30 ms
+    double rms = 0.0;   // RMS of E-field
     bool offset_encoded = true;
+    SkKernel::Params sk_params;
 
     // Subsequent members are not initialized by caller.
     long nframes = 0;
@@ -102,23 +112,37 @@ struct RunState
     double rfimask_den = 0.0;
 
     
-    void init()
+    void init(bool print_params = true)
     {
-	// FIXME move these to main() for visibility?
-	SkKernel::Params p;
-	p.sk_rfimask_sigmas = 1.5;
-	p.single_feed_min_good_frac = 0.5;
-	p.feed_averaged_min_good_frac = 0.5;
-	p.mu_min = 1.0;
-	p.mu_max = 50.0;
-
+	if (print_params) {
+	    cout << "Name: "<< name << "\n"
+		 << "    T = " << left << setw(44) << T << "// Number of baseband time samples per frame\n"
+		 << "    F = " << left << setw(44) << F << "// Number of freq channels\n"
+		 << "    S = " << left << setw(44) << S << "// Number of stations\n"
+		 << "    Nds1 = " << left << setw(41) << Nds1 << "// Downsampling factor baseband -> 1 ms\n"
+		 << "    Nds2 = " << left << setw(41) << Nds2 << "// Downsampling factor 1 ms -> 30 ms\n"
+		 << "    rms = " << left << setw(42) << rms << "// RMS of E-field\n"
+		 << "    offset_encoded = " << left << setw(31) << offset_encoded << "// Boolean\n"
+		 << "    sk_params.sk_rfimask_sigmas = " << left << setw(18) << sk_params.sk_rfimask_sigmas
+		 << "// RFI masking threshold in \"sigmas\"\n"
+		 << "    sk_params.single_feed_min_good_frac = " << left << setw(10) << sk_params.single_feed_min_good_frac
+		 << "// For single-feed SK-statistic (threshold for validity)\n"
+		 << "    sk_params.feed_averaged_min_good_frac = " << left << setw(8) << sk_params.feed_averaged_min_good_frac
+		 << "// For feed-averaged SK-statistic (threshold for validity)\n"
+		 << "    sk_params.mu_min = " << left << setw(29) << sk_params.mu_min
+		 << "// For single-feed SK-statistic (threshold for validity)\n"
+		 << "    sk_params.mu_max = " << left << setw(29) << sk_params.mu_max
+		 << "// For single-feed SK-statistic (threshold for validity)"
+		 << endl;
+	}
+	    
 	// sk_kernel1
-	p.Nds = Nds1;
-	this->sk_kernel1 = make_shared<SkKernel> (p);
+	this->sk_params.Nds = Nds1;
+	this->sk_kernel1 = make_shared<SkKernel> (sk_params);
 
 	// sk_kernel2
-	p.Nds = Nds1 * Nds2;
-	this->sk_kernel2 = make_shared<SkKernel> (p);
+	this->sk_params.Nds = Nds1 * Nds2;
+	this->sk_kernel2 = make_shared<SkKernel> (sk_params);
 
 	// GPU arrays.
 	this->E = Array<uint8_t> ({T,F,S}, af_gpu);
@@ -255,6 +279,11 @@ int main(int argc, char **argv)
     rs.S = 1024;
     rs.rms = gputils::from_str<double> (argv[1]);
     rs.offset_encoded = true;
+    rs.sk_params.sk_rfimask_sigmas = 1.5;
+    rs.sk_params.single_feed_min_good_frac = 0.5;
+    rs.sk_params.feed_averaged_min_good_frac = 0.5;
+    rs.sk_params.mu_min = 1.0;
+    rs.sk_params.mu_max = 50.0;
     
     stringstream ss;
     ss << "Full CHORD (rms=" << rs.rms << ")";
