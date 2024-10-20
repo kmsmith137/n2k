@@ -1,3 +1,5 @@
+# See n2k/sk_bias/README.txt for a little documentation on how this code is used.
+
 import sys
 import pickle
 import itertools
@@ -251,7 +253,12 @@ def fit_polynomial(xvec, yvec):
 
 
 class BiasInterpolator:
-    def __init__(self, *, mu_min=1.0, mu_max=90.0, bias_nx=128, bias_nmin=64, sigma_nx=64, remove_zero=False):
+    def __init__(self, *, mu_min=None, mu_max=None, bias_nx=128, bias_nmin=64, sigma_nx=64, remove_zero=False):
+        if mu_min is None:
+            mu_min = 1.0
+        if mu_max is None:
+            mu_max = 90.0
+        
         self.mu_min = mu_min
         self.mu_max = mu_max
         self.bias_nmin = bias_nmin
@@ -273,8 +280,8 @@ class BiasInterpolator:
         self.nlist = [ None ] + [ int(1/y + 0.5) for y in self.yvec[1:] ]
         self.yvec[1:] = 1.0 / np.array(self.nlist[1:])
 
-        print(f'{self.yvec=}')
-        print(f'{self.nlist=}')
+        # print(f'{self.yvec=}')
+        # print(f'{self.nlist=}')
                 
         # b = bias, s = sigma
         self.bmat = np.zeros((self.bias_nx, self.bias_ny))
@@ -412,36 +419,32 @@ class MCTracker:
         self.var = (sum2/(n-1)) if (n > 1) else 0
         
 
-def run_mcs(pdf, n, *, binterp=None, nbatch=None, min_s1=None, max_s1=None):
+def run_mcs(pdf, n, *, binterp=True, nbatch=None, mu_min=None, mu_max=None):
     """Called via 'python -m sk_bias run_mcs'. Runs forever!"""
 
-    bvec = None
-    
-    if binterp is not None:
-        assert min_s1 is None
-        assert max_s1 is None
-        min_s1, max_s1, bvec = binterp.get_interpolated_bvec(n)
+    print(f'run_mcs: called with rms={pdf.rms} {n=} {binterp=} {nbatch=} {mu_min=} {mu_max=}')
+    assert binterp in [ True, False ]
 
-    s = f'run_mcs: rms={pdf.rms} n={n} mu={pdf.mu} binterp={binterp is not None}'
-    s += (f' {nbatch=}' if (nbatch is not None) else '')
-    s += (f' {min_s1=}' if (min_s1 is not None) else '')
-    s += (f' {max_s1=}' if (max_s1 is not None) else '')
-    print(s)
-    
+    # Initialize min_s1, max_s1, bvec
+    if binterp:
+        b = BiasInterpolator(mu_min=mu_min, mu_max=mu_max)
+        min_s1, max_s1, bvec = b.get_interpolated_bvec(n)
+    else:
+        min_s1 = max(round(mu_min*n), 1) if (mu_min is not None) else 1
+        max_s1 = min(round(mu_max*n), 98*n) if (mu_max is not None) else (98*n)
+        bvec = None
+        
     if nbatch is None:
         nbatch = 2**21 // n
-    if min_s1 is None:
-        min_s1 = 1
-    if max_s1 is None:
-        max_s1 = 98*n
 
+    print(f'run_mcs: updated mu_min={min_s1/n} mu_max={max_s1/n}')
     assert 1 <= min_s1 <= max_s1 <= 98*n
     
     predicted_bias = compute_bias(pdf, n, min_s1, max_s1, bvec)
     predicted_sigma = pdf.sigma_large_n / n**0.5
     tracker = MCTracker()
         
-    print(pdf)
+    print(f'run_mcs: {pdf}')
     print(f'Running Monte Carlos with {n=}')
 
     for iouter in itertools.count(1):
@@ -645,15 +648,102 @@ def check_sigma_interpolation(binterp):
     print(f'    maxdiff={maxdiff} at mu={argmax}')
     
 
+####################################################################################################
+
+
+def make_fig1():
+    """Called by 'python -m sk_bias make_plots'.
+    Makes the plot in the overleaf, showing (b,sigma) vs mu_true."""
+    
+    n = 64
+    nmu = 100
+    
+    mu_vec = logspace(1.0, 90.0, nmu)
+    b_vec = np.zeros(nmu)
+    binf_vec = np.zeros(nmu)
+    sigma_vec = np.zeros(nmu)
+    max_bdiff = 0.0
+
+    for i,mu in enumerate(mu_vec):
+        pdf = Pdf.from_mu(mu)
+        b_vec[i] = compute_bias(pdf, n, min_s1=1, max_s1=98*n)
+        binf_vec[i] = pdf.b_large_n
+        sigma_vec[i] = pdf.sigma_large_n
+        max_bdiff = max(abs(b_vec[i]-binf_vec[i]), max_bdiff)
+
+    plt.figure(figsize=(4,3))
+    plt.semilogx(mu_vec, b_vec, label=f'${n=}$')
+    plt.semilogx(mu_vec, binf_vec, label=r'$n=\infty$')
+    plt.xlabel(r'$\mu_{\rm true}$')
+    plt.ylabel(r'SK-bias $b$')
+    plt.legend(loc='lower left')
+    savefig(f'fig1_left_panel.pdf')
+
+    plt.figure(figsize=(4,3))
+    plt.semilogx(mu_vec, sigma_vec)
+    plt.xlabel(r'$\mu_{\rm true}$')
+    plt.ylabel(r'SK variance $\sigma$ ($n=\infty$)')
+    savefig(f'fig1_right_panel.pdf')
+
+    print(f'Note: max Delta(b) = {max_bdiff}')
+
+
+def make_fig2(mu_min, mu_max):
+    """Called by 'python -m sk_bias make_plots'.
+    Makes the plot in the overleaf, showing (b,sigma) vs mu_obs."""
+
+    # Defaults from __main__ are (mu_min, mu_max) = (2, 50).
+    print(f'make_fig2: {mu_min=} {mu_max=}')
+    
+    nmu = 100
+    
+    # Pairs (n, color)
+    todo = [
+        (64, (1, 0, 0)),
+        # (85, (0.66, 0, 0.33)),
+        # (107, (0.33, 0, 0.66)),
+        # (128, (0, 0, 1)),
+        (256, (0, 0, 1)),
+        # (512, (0, 0.66, 0.33)),
+        (1024, (0, 1, 0))
+    ]
+
+    nn = len(todo)
+    
+    mu_vec = logspace(mu_min, mu_max, nmu)
+    pdf_list = [ Pdf.from_mu(mu) for mu in mu_vec ]
+    sigma_vec = np.array([ pdf.sigma_large_n for pdf in pdf_list ])
+    bias_mat = np.zeros((nn,nmu))
+    binterp = BiasInterpolator(mu_min=mu_min, mu_max=mu_max)
+    
+    for (i,(n,_)) in enumerate(todo):
+        min_s1, max_s1, bvec = binterp.get_interpolated_bvec(n)
+        bias_mat[i,:] = np.array([ compute_bias(pdf, n, min_s1, max_s1, bvec) for pdf in pdf_list ])
+
+    plt.figure(figsize=(4,3))
+    for (b,(n,color)) in zip(bias_mat, todo):
+        # Plot positive and negative parts
+        eps = n**0.5 * np.abs(b) / sigma_vec
+        plt.loglog(mu_vec, eps, color=color, ls='-', label=f'n={n}')
+    plt.axhline(1.0/2048**0.5, color='k', ls=':', label=r'$2048^{-1/2}$')
+    plt.xlabel(r'$\mu_{\rm true}$')
+    plt.ylabel(r'$\epsilon$')
+    plt.legend(loc='upper left')
+    plt.ylim(1.0e-4, 1.0)
+    savefig('fig2_right_panel.pdf')
+    
+    # plt.figure(figsize=(4,3))
+    
+    
+    
 #################################   python -m sk_bias emit_code   ##################################
 
 
-def emit_code(interp):
-    assert isinstance(interp, BiasInterpolator)
-
+def emit_code():
     hpp_filename = 'sk_globals.hpp'
     cu_filename = 'sk_globals.cu'
     
+    interp = BiasInterpolator()
     bias_nx = interp.bias_nx
     bias_ny = interp.bias_ny
     sigma_nx = interp.sigma_nx

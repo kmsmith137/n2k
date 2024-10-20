@@ -286,8 +286,7 @@ extern void launch_s012_station_downsample_kernel(
 
 struct SkKernel
 {
-    // High-level parameters for the SkKernel.
-    // See overleaf for precise descriptions.
+    // High-level parameters for the SkKernel. See overleaf for precise descriptions.
     // We might define kotekan yaml config params for some/all of these.
     //
     // The 'Nds' parameter is the total downsampling factor between the baseband data
