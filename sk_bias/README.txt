@@ -23,7 +23,9 @@ How to use the 'sk_bias' python module:
 
         python -m sk_bias make_plots   # fig1_left_panel.pdf, fig1_right_panel.pdf
 
-  5. (Subsection 3.)
+  5. (Subsection 3.) Justify statement that finite-n/edge effects can also
+     bias estimation of sigma by 10-20%.
 
         # Args are (rms, n, mu_min, mu_max).
 	python -m sk_bias run_mcs 4.0 64 2 50
+	python -m sk_bias run_mcs 5.0 64 2 50
