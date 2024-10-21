@@ -156,8 +156,8 @@ void launch_s012_station_downsample_kernel(ulong *Sout, const ulong *Sin, const 
 
     uint Wx = (S+1023) / 1024;
     int nblocks = (M+31) / 32;
-    int shmem_nbytes = bf_mask_shmem_nbytes(S,Wx);
-    shmem_nbytes += (8*32*Wx);   // 'shmem_red' array has shape (Wx,Wy,32/Wy) and dtype ulong
+    int shmem_nbytes = bf_mask_shmem_nbytes(S,Wx);    // asserts that Wx is chosen correctly
+    shmem_nbytes += (8*32*Wx);  // 'shmem_red' array has shape (Wx,Wy,32/Wy) and dtype ulong
 
     if (Wx == 1)       // use Wy=4
 	s012_station_downsample_kernel<4> <<< nblocks, {32*Wx,4}, shmem_nbytes, stream >>> 

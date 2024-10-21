@@ -151,8 +151,8 @@ __global__ void sk_kernel(
 	float S0 = in_S012[s];        // ulong -> float
 	float S1 = in_S012[s+S];      // ulong -> float
 	float S2 = in_S012[s+2*S];    // ulong -> float
-
-	float S0_min = Nds * single_feed_min_good_frac - 0.1f;
+	
+	float S0_min = Nds * single_feed_min_good_frac - 0.001f;
 	bool sf_valid = (S0 >= S0_min) && (S1 >= mu_min*S0) && (S1 <= mu_max*S0);
 
 	S0 = sf_valid ? S0 : 2.0f;    // If invalid, set to 2.0 to avoid dividing by zero below
@@ -522,7 +522,7 @@ void SkKernel::launch(
     uint Bf = (F+Wf-1) / Wf;
 
     // Shared memory size.
-    uint shmem_nbytes = bf_mask_shmem_nbytes(S,Ws);
+    uint shmem_nbytes = bf_mask_shmem_nbytes(S,Ws);  // asserts that Ws is chosen correctly
     shmem_nbytes += 16*Ws*Wt*Wf;   // 'shmem_red' has shape (Ws,Wt,Wf,4) and dtype float
     shmem_nbytes += 4*32;          // 'shmem_rfimask' has shape (32,) and dtype uint
     shmem_nbytes += bsigma_shmem_nbytes;
