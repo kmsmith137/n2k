@@ -222,17 +222,9 @@ correlate_pl_kernel_S128(int *counts, const ulong *pl_mask, const uint *rfimask,
     int ply[4][2][1];
     int v[10][2][2];
 
-    // FIXME try pragma unroll and check SASS.
-    v[0][0][0] = v[0][0][1] = v[0][1][0] = v[0][1][1] = 0;
-    v[1][0][0] = v[1][0][1] = v[1][1][0] = v[1][1][1] = 0;
-    v[2][0][0] = v[2][0][1] = v[2][1][0] = v[2][1][1] = 0;
-    v[3][0][0] = v[3][0][1] = v[3][1][0] = v[3][1][1] = 0;
-    v[4][0][0] = v[4][0][1] = v[4][1][0] = v[4][1][1] = 0;
-    v[5][0][0] = v[5][0][1] = v[5][1][0] = v[5][1][1] = 0;
-    v[6][0][0] = v[6][0][1] = v[6][1][0] = v[6][1][1] = 0;
-    v[7][0][0] = v[7][0][1] = v[7][1][0] = v[7][1][1] = 0;
-    v[8][0][0] = v[8][0][1] = v[8][1][0] = v[8][1][1] = 0;
-    v[9][0][0] = v[9][0][1] = v[9][1][0] = v[9][1][1] = 0;
+    #pragma unroll
+    for (int i = 0; i < 10; i++)
+	v[i][0][0] = v[i][0][1] = v[i][1][0] = v[i][1][1] = 0;
     
     for (uint n128 = 0; n128 < N128; n128++) {
 	if ((n128 & 7) == 0) {
@@ -250,38 +242,23 @@ correlate_pl_kernel_S128(int *counts, const ulong *pl_mask, const uint *rfimask,
 	__syncthreads();
 
 	// Read from shared memory.
-	// FIXME try pragma unroll and check SASS.
+	#pragma unroll
+	for (int i = 0; i < 4; i++) {
+	    plx[i][0] = shmem[32*wx + laneId + 128*i];
+	    ply[i][0][0] = shmem[32*wy + laneId + 128*i];
+	    ply[i][1][0] = shmem[32*wy + laneId + 128*i + 64];
+	}
 	
-	plx[0][0] = shmem[32*wx + laneId];
-	plx[1][0] = shmem[32*wx + laneId + 128];
-	plx[2][0] = shmem[32*wx + laneId + 256];
-	plx[3][0] = shmem[32*wx + laneId + 384];
-
-	ply[0][0][0] = shmem[32*wy + laneId];
-	ply[0][1][0] = shmem[32*wy + laneId + 64];
-	ply[1][0][0] = shmem[32*wy + laneId + 128];
-	ply[1][1][0] = shmem[32*wy + laneId + 192];
-	ply[2][0][0] = shmem[32*wy + laneId + 256];
-	ply[2][1][0] = shmem[32*wy + laneId + 320];
-	ply[3][0][0] = shmem[32*wy + laneId + 384];
-	ply[3][1][0] = shmem[32*wy + laneId + 448];
-
 	__syncthreads();
 	
 	// Do matrix multiplications (20 int1 m8n8k128 MMAs).
-	// FIXME could try pragma unroll here as well.
-	
-	multiply_8_16(v[0], plx[0], ply[0]);
-	multiply_8_16(v[1], plx[1], ply[0]);
-	multiply_8_16(v[2], plx[1], ply[1]);
-	multiply_8_16(v[3], plx[2], ply[0]);
-	multiply_8_16(v[4], plx[2], ply[1]);
-	multiply_8_16(v[5], plx[2], ply[2]);
-	multiply_8_16(v[6], plx[3], ply[0]);
-	multiply_8_16(v[7], plx[3], ply[1]);
-	multiply_8_16(v[8], plx[3], ply[2]);
-	multiply_8_16(v[9], plx[3], ply[3]);
 
+	#pragma unroll
+	for (int i = 0; i < 4; i++)
+	    #pragma unroll
+	    for (int j = 0; j <= i; j++)
+		multiply_8_16(v[(i*(i+1))/2 + j], plx[i], ply[j]);
+	
 	pl_mask += t128_stride;
     }
 
@@ -301,32 +278,27 @@ correlate_pl_kernel_S128(int *counts, const ulong *pl_mask, const uint *rfimask,
     ulong tf = ulong(tout)*ulong(F) + f;
     counts += tf*(8*17*64);
     counts += b;
-
-    // Off-diagonals (I > J).
-    // Pointer offsets are (a*I + 512*I^2 + 256*J).
     
-    write_8_16(counts + a + 512, v[1]);              // I=1, J=0
-    write_8_16(counts + 2*a + 4*512, v[3]);          // I=2, J=0
-    write_8_16(counts + 2*a + 4*512 + 256, v[4]);    // I=2, J=1
-    write_8_16(counts + 3*a + 9*512, v[6]);          // I=3, J=0
-    write_8_16(counts + 3*a + 9*512 + 256, v[7]);    // I=3, J=1
-    write_8_16(counts + 3*a + 9*512 + 2*256, v[8]);  // I=3, J=2
-
+    // Off-diagonals (I > J).
+    #pragma unroll
+    for (int i = 1; i < 4; i++)
+	#pragma unroll
+	for (int j = 0; j < i; j++)
+	    write_8_16(counts + a*i + 512*i*i + 256*j, v[(i*(i+1))/2 + j]);
+    
     // Diagonals (I = J).
     // We only write if (wx >= wy+2R).
 
     if (wx >= wy) {   // write R=0
-	write_8_8(counts, v[0][0]);                        // I=J=0
-	write_8_8(counts + a + 512 + 256, v[2][0]);        // I=J=1
-	write_8_8(counts + 2*a + 4*512 + 2*256, v[5][0]);  // I=J=2
-	write_8_8(counts + 3*a + 9*512 + 3*256, v[9][0]);  // I=J=3
+	#pragma unroll
+	for (int i = 0; i < 4; i++)
+	    write_8_8(counts + a*i + 512*i*i + 256*i, v[(i*(i+1))/2 + i][0]);
     }
 
     if (wx >= wy+2) {  // write R=1
-	write_8_8(counts + 128, v[0][1]);                        // I=J=0
-	write_8_8(counts + a + 512 + 256 + 128, v[2][1]);        // I=J=1
-	write_8_8(counts + 2*a + 4*512 + 2*256 + 128, v[5][1]);  // I=J=2
-	write_8_8(counts + 3*a + 9*512 + 3*256 + 128, v[9][1]);  // I=J=3
+	#pragma unroll
+	for (int i = 0; i < 4; i++)
+	    write_8_8(counts + a*i + 512*i*i + 256*i + 128, v[(i*(i+1))/2 + i][1]);
     }
 }
 
