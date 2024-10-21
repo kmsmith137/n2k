@@ -13,7 +13,7 @@ namespace n2k {
 #endif
 
 
-// FIXME can be improved.
+// FIXME double_bits() could be improved.
 __device__ inline uint2 double_bits(uint x)
 {
     uint2 ret{0U,0U};
@@ -97,8 +97,6 @@ void launch_pl_mask_expander(ulong *pl_out, const ulong *pl_in, long Tout, long 
     if (Sds & 15)
 	throw runtime_error("launch_pl_mask_expander: expected Sds to be a multiple of 16");
 
-    // FIXME check for 32-bit overflows.
-    
     long M = Tout / 128;
     long N = Sds * 2;
     

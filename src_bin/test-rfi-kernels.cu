@@ -15,7 +15,7 @@ using namespace gputils;
 
 
 
-// FIXME improve!
+// FIXME improve make_random_s012_array()?
 static Array<ulong> make_random_s012_array(int T, int F, int S)
 {
     std::mt19937 &rng = gputils::default_rng;
@@ -32,7 +32,7 @@ static Array<ulong> make_random_s012_array(int T, int F, int S)
 static Array<uint8_t> make_random_bad_feed_mask(int S)
 {
     assert(S > 0);
-    assert(S < 32*1024);   // FIXME should be a global somewhere
+    assert(S < 32*1024);
     assert(S % 128 == 0);  // assumed by load_bad_feed_mask()
     
     Array<uint8_t> ret({S}, af_rhost);
@@ -213,7 +213,6 @@ static void test_bad_feed_mask()
 // -------------------------------------------------------------------------------------------------
 //
 // Test cubic_interpolate() in interpolation.hpp
-// FIXME this test could be improved.
 
 
 struct RandCubic

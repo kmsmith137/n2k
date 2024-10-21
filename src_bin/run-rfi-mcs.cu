@@ -258,7 +258,9 @@ struct RunState
 	sk_single_feed_slow_tracker.show("Single-feed slow SK");
 
 	if (rfimask_den > 0.0)
-	    cout << "    RFI mask fraction = " << (rfimask_num / rfimask_den) << endl;
+	    cout << "    RFI mask fraction = " << (rfimask_num / rfimask_den)
+		 << " (this is the 'good' fraction, not the 'bad' fraction)"
+		 << endl;
     }
 };
 
@@ -292,6 +294,7 @@ int main(int argc, char **argv)
     rs.init();
     
     cout << "Starting Monte Carlos.\n"
+	 << "This program chains all the GPU kernels together, to test whether bias/sigma/maskfrac are as expected.\n"
 	 << "Warning: slow! (Simulating E-array on CPU is the bottleneck).\n"
 	 << "You may want to leave this running in the background, and check on it later." << endl;
 
