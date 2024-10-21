@@ -133,6 +133,10 @@ __global__ void sk_kernel(
     in_S012 += in_ix;
     out_sk_single_feed = write_sf ? (out_sk_single_feed + in_ix) : NULL;
 
+    // Threshold for S0 validity, see below.
+    ulong single_feed_S0_min = Nds * single_feed_min_good_frac + 0.999f;  // round up
+    single_feed_S0_min = max(single_feed_S0_min, 2UL);  // paranoid
+    
     // Reminder: load_bad_feed_mask() (defined in include/n2k/bad_feed_mask.hpp)
     // reads the bad feed mask, and permutes bits so that 'bf' contains relevant
     // bits for this thread.
@@ -148,34 +152,42 @@ __global__ void sk_kernel(
 
     // Loop over stations.
     for (int s = threadIdx.x; s < S; s += blockDim.x) {
-	float S0 = in_S012[s];        // ulong -> float
-	float S1 = in_S012[s+S];      // ulong -> float
-	float S2 = in_S012[s+2*S];    // ulong -> float
-	
-	float S0_min = Nds * single_feed_min_good_frac - 0.001f;
-	bool sf_valid = (S0 >= S0_min) && (S1 >= mu_min*S0) && (S1 <= mu_max*S0);
+	ulong S0i = in_S012[s];
+	ulong S1i = in_S012[s+S];
+	ulong S2i = in_S012[s+2*S];
 
-	S0 = sf_valid ? S0 : 2.0f;    // If invalid, set to 2.0 to avoid dividing by zero below
-	S1 = sf_valid ? S1 : 1.0f;    // If invalid, set to 1.0 to avoid dividing by zero below
+	float S0f = float(S0i);
+	float S1f = float(S1i);
+	
+	bool sf_valid = (S0i >= single_feed_S0_min) && (S1f >= mu_min*S0f) && (S1f <= mu_max*S0f);
+	S0f = sf_valid ? S0f : 2.0f;  // If invalid, set to 2.0 to avoid dividing by zero below
+	S1f = sf_valid ? S1f : 1.0f;  // If invalid, set to 1.0 to avoid dividing by zero below
 
 	// Interpolation uses variables (x,y).
-	float y = 1.0f / S0;      // Note: S0 > 0 (even if !sf_valid)
-	float mu = S1 * y;        // Always > 0 (even if !sf_valid)
-	float x = logf(mu);       // Note: mu > 0 (even if !sf_valid)
+	float y = 1.0f / S0f;      // Note: S0 > 0 (even if !sf_valid)
+	float mu = S1f * y;        // Always > 0 (even if !sf_valid)
+	float x = logf(mu);        // Note: mu > 0 (even if !sf_valid)
 
 	// Clip x
 	constexpr float xmin = sk_globals::xmin;
 	constexpr float xmax = sk_globals::xmax;
 	x = (x >= xmin) ? x : xmin;
 	x = (x <= xmax) ? x : xmax;
-	
+
 	// Single-feed (SK, b, sigma).
+	// 
+	// SK = (S0+1)/(S0-1) * (S0*S2/S1**2 - 1) - b
+	//    = sk_num / sk_den - b 
+	//
+	// where sk_num = (S0+1) * (S0*S2-S1**2)
+	//       sk_den = (S0-1) * S1**2
+
 	// Note: interpolate_bias_gpu() and interpolate_sigma_gpu() are defined in interpolation.hpp
-	// FIXME consider making computation of 'sk' more numerically stable.
-	
 	float b = interpolate_bias_gpu(shmem_bsigma_coeffs, x, y);
 	float sigma = interpolate_sigma_gpu(shmem_bsigma_coeffs, x) * sqrtf(y);  // note sqrt(y) = N^(-1/2) here
-	float sk = (S0+1)/(S0-1) * (S0*S2/(S1*S1) - 1) - b;
+	float sk_num = (S0f+1) * float(S0i*S2i-S1i*S1i);
+	float sk_den = (S0f-1) * S1f * S1f;
+	float sk = sk_num / sk_den - b;
 	float sigma2 = sigma * sigma;
 
 	// Write single-feed SK statistics (sk,b,sigma) to 'out_sk_single_feed'.
@@ -189,7 +201,7 @@ __global__ void sk_kernel(
 
 	// Accumulate single-feed contribution to feed-averaged SK statistics.
 	bool feed_is_good = (bf & 1);
-	float w = (sf_valid && feed_is_good) ? S0 : 0.0f;
+	float w = (sf_valid && feed_is_good) ? S0f : 0.0f;
 	
 	sum_w += w;
 	sum_wsk += w * sk;
@@ -233,6 +245,9 @@ __global__ void sk_kernel(
     // FIXME could shave off a few clock cycles in this part.
 
     if (warpId == 0) {
+	float feed_averaged_S0_min = S * Nds * feed_averaged_min_good_frac - 0.001f;
+	feed_averaged_S0_min = max(feed_averaged_S0_min, 0.999f);
+	
 	// shmem_red has shape (Ws,Wt,Wf,4).
 	const int nred = 4*Wt*Wf;
 	const int s = laneId & (nred-1);
@@ -241,15 +256,18 @@ __global__ void sk_kernel(
 	for (int i = 0; i < Ws; i++)
 	    y += shmem_red[s + i*nred];
 
+	bool is_active = (laneId < nred);
+	y = is_active ? y : 0.0f;
+	
 	// At this point,
 	//   y = sum_e N_e               if (laneId < nred) and (laneId % 4 == 0)
 	//       sum_e N_e SK_e          if (laneId < nred) and (laneId % 4 == 1)
 	//       sum_e N_e b_e           if (laneId < nred) and (laneId % 4 == 2)
 	//       sum_e N_e^2 sigma_e^2   if (laneId < nred) and (laneId % 4 == 3)
-	//       junk                    if (laneId >= nred)
+	//       0                       if (laneId >= nred)
 	
-	// Replace sigma^2 -> sigma2 (only for laneId % 4 == 3)
-	bool is_sigma2 = (laneId < nred) && ((laneId & 3) == 3);
+	// Replace sigma^2 -> sigma (only for laneId % 4 == 3)
+	bool is_sigma2 = (laneId & 3) == 3;
 	float z = sqrtf(is_sigma2 ? y : 0.0f);
 	y = is_sigma2 ? z : y;
 
@@ -258,12 +276,11 @@ __global__ void sk_kernel(
 	//       sum_e N_e SK_e                 if (laneId < nred) and (laneId % 4 == 1)
 	//       sum_e N_e b_e                  if (laneId < nred) and (laneId % 4 == 2)
 	//       sqrt[ sum_e N_e^2 sigma_e^2 ]  if (laneId < nred) and (laneId % 4 == 3)
-	//       junk                           if (laneId >= nred)
+	//       0                              if (laneId >= nred)
 
 	// Broadcast (sum_e N_e) from (laneId % 4 == 0) to all lanes.
 	float den = __shfl_sync(FULL_MASK, y, laneId & ~3);
-	float S0_min = S * Nds * feed_averaged_min_good_frac - 0.1f;
-	bool fsum_valid = (den >= S0_min);
+	bool fsum_valid = (den >= feed_averaged_S0_min);
 	den = fsum_valid ? den : 1.0f;
 	y = fsum_valid ? (y/den) : (is_sigma2 ? -1.0f : 0.0f);
 
@@ -272,7 +289,7 @@ __global__ void sk_kernel(
 	//       (\tilde SK if fsum_valid else 0)      if (laneId < nred) and (laneId % 4 == 1)
 	//       (\tilde b if fsum_valid else 0)       if (laneId < nred) and (laneId % 4 == 2)
 	//       (\tilde sigma if fsum_valid else -1)  if (laneId < nred) and (laneId % 4 == 3)
-	//       junk                                  if (laneId >= nred)
+	//       0                                     if (laneId >= nred)
 
 	// Write feed-averaged SK-statistic to global memory ('out_sk_feed_averaged').
 	// Note output array shape = (T,F,3).
