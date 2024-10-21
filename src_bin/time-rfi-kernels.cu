@@ -22,7 +22,7 @@ struct TimingParams
 
 static void time_s0_kernel(const TimingParams &tp)
 {
-    const long ninner = 100;
+    const long ninner = 1000;
     const long nouter = 10;
     
     long T = tp.T;

@@ -1,5 +1,6 @@
 #include "../include/n2k/rfi_kernels.hpp"
 
+#include "../include/n2k/internals/internals.hpp"
 #include "../include/n2k/internals/bad_feed_mask.hpp"
 #include "../include/n2k/internals/interpolation.hpp"
 #include "../include/n2k/internals/sk_globals.hpp"
@@ -49,7 +50,7 @@ __device__ inline float reduce_four(float x0, float x1, float x2, float x3)
 
 
 
-// sk_kernel(): based on code by Nada El-Falou
+// sk_kernel(): based on code by Nada El-Falou.
 //
 // Constraints:
 //
@@ -67,9 +68,7 @@ __device__ inline float reduce_four(float x0, float x1, float x2, float x3)
 //   uint bf[Nbf];           // temp buffer for load_bad_feed_mask(), Nbf = max(S/32,32)
 //   float red[4*W];         // temp reduce buffer, layout (Ws,Wt,Wf,4).
 //   uint rfimask[32];       // 32 copies of same 4-byte uint
-//   float bsigma_coeffs[ncoeffs];   // currently ~4 KB
-//
-//   where ncoeffs = (12*bias_nx + 9*sigma_nx)  [ see interpolation.hpp for layout ]
+//   float bsigma_coeffs[bsigma_shmem_nelts];   // currently ~4 KB, see interpolation.hpp
 //
 // If (bias_nx,sigma_nx) = (128,64), then gmem/shmem footprint for coeffs is 2.25/8.25 KiB.
 // This can be compared to the single-threadblock gmem footprint of the S_012 arrays:
@@ -104,8 +103,6 @@ __global__ void sk_kernel(
     
     // Shared memory layout.
     extern __shared__ uint shmem_base[];
-    const uint Nbf = max(S,1024) >> 5;   // see include/n2k/bad_feed_mask.hpp
-    
     uint *shmem_bf = shmem_base;
     float *shmem_red = (float *) (shmem_bf + bf_mask_shmem_nelts(S));
     uint *shmem_rfi = (uint *) (shmem_red + 4*Ws*Wf*Wt);
@@ -130,7 +127,7 @@ __global__ void sk_kernel(
     int t1 = (t0 < T) ? t0 : (T-1);
     int f1 = (f0 < F) ? f0 : (F-1);
     
-    int in_ix = (t1*F + f1) * (3*S);   // note (t1,f1) not (t0,f0)
+    long in_ix = (t1*long(F) + f1) * (3*S);   // note (t1,f1) not (t0,f0)
     bool write_sf = (out_sk_single_feed != NULL) && (t0 == t1) && (f0 == f1);
     
     in_S012 += in_ix;
@@ -288,7 +285,7 @@ __global__ void sk_kernel(
 
 	t += (blockIdx.z * Wt);
 	f += (blockIdx.y * Wf);
-	int out_ix = t*(3*F) + (3*f) + m;
+	long out_ix = t*long(3*F) + (3*f) + m;
 	bool write_fsum = (t < T) && (f < F) && (laneId < nred) && (laneId & 3);
 
 	if (write_fsum)
@@ -351,7 +348,7 @@ __global__ void sk_kernel(
 	uint val = (shmem_rfi[laneId] & (1 << bit)) ? 0xffffffffU : 0;
 
 	// Index in out_rfimask (shape (F,T*M) with stride rfimask_fstride).
-	int out_ix = (f+fb)*rfimask_fstride + (t+tb)*M + m;
+	long out_ix = (f+fb)*long(rfimask_fstride) + (t+tb)*long(M) + m;
 	out_rfimask[out_ix] = val;
     }
 }
@@ -492,14 +489,14 @@ void SkKernel::launch(
 	throw runtime_error("SkKernel::launch: expected T > 0");
     if (F <= 0)
 	throw runtime_error("SkKernel::launch: expected F > 0");
-    if ((S <= 0) || (S > 8192))
-	throw runtime_error("SkKernel::launch: expected 0 < S <= 8192");
-    if (3*T*F*S >= INT_MAX)
-	throw runtime_error("SkKernel::launch: product T*F*S is too large (32-bit overflow)");
+    if ((S <= 0) || (S > rfi_max_stations))
+	throw runtime_error("SkKernel::launch: expected 0 < S <= rfi_max_stations");
+    if (3*T*F*S > INT_MAX)
+	throw runtime_error("SkKernel::launch: 32-bit overflow (product T*F*S is too large)");
     
     // This constraint comes from load_bad_feed_mask(), and could be relaxed if necessary.
     
-    if ((S % 128) != 0)
+    if ((S & 127) != 0)
 	throw runtime_error("SkKernel::launch: expected S to be a multiple of 128.");
 
     // If an RFI bitmask is being computed, check 'rfimask_fstride' and 'sk_rfimask_sigmas' arguments,.
@@ -560,30 +557,12 @@ void SkKernel::launch(
     cudaStream_t stream) const
 {
     check_params(this->params);
-    int Nds = this->params.Nds;
+
+    // Check 'out_sk_feed_averaged', 'in_S012', 'in_bf_mask' arguments.
     
-    // Check 'out_sk_feed_averaged', 'in_S012', 'in_bf_mask' args.
-    
-    if (out_sk_feed_averaged.ndim != 3)
-	throw runtime_error("SkKernel::launch: expected out_sk_feed_averaged.ndim == 3");
-    if (!out_sk_feed_averaged.is_fully_contiguous())
-	throw runtime_error("SkKernel::launch: expected 'out_sk_feed_averaged' to be fully contiguous");
-    if (!out_sk_feed_averaged.on_gpu())
-	throw runtime_error("SkKernel::launch: expected 'out_sk_feed_averaged' to be in GPU memory");
-    
-    if (in_S012.ndim != 4)
-	throw runtime_error("SkKernel::launch: expected in_S012.ndim == 4");
-    if (!in_S012.is_fully_contiguous())
-	throw runtime_error("SkKernel::launch: expected 'in_S012' to be fully contiguous");
-    if (!in_S012.on_gpu())
-	throw runtime_error("SkKernel::launch: expected 'out_sk_feed_averaged' to be in GPU memory");
-    
-    if (in_bf_mask.ndim != 1)
-	throw runtime_error("SkKernel::launch: expected in_bf_mask.ndim == 1");    
-    if (!in_bf_mask.is_fully_contiguous())
-	throw runtime_error("SkKernel::launch: expected 'in_bf_mask' to be fully contiguous");
-    if (!in_bf_mask.on_gpu())
-	throw runtime_error("SkKernel::launch: expected 'out_sk_feed_averaged' to be in GPU memory");
+    check_array(out_sk_feed_averaged, "SkKernel::launch", "out_sk_feed_averaged", 3, true);  // ndim=3, contiguous=true
+    check_array(in_S012, "SkKernel::launch", "in_S012", 4, true);                            // ndim=4, contiguous=true
+    check_array(in_bf_mask, "SkKernel::launch", "in_bf_mask", 1, true);                      // ndim=1, contiguous=true
     
     if (out_sk_feed_averaged.shape[0] != in_S012.shape[0])
 	throw runtime_error("SkKernel::launch: inconsistent value of T between 'out_sk_feed_averaged' and 'in_S012' arrays");
@@ -604,21 +583,19 @@ void SkKernel::launch(
     // Check 'out_sk_single_feed' and 'out_rfimask' arguments.
 
     if (out_sk_single_feed.data != NULL) {
+	check_array(out_sk_single_feed, "SkKernel::launch", "out_sk_single_feed", 4, true);   // ndim=4, contiguous=true
+	
 	if (!out_sk_single_feed.shape_equals({T,F,3,S}))
 	    throw runtime_error("SkKernel::launch: 'out_sk_single_feed' array has wrong shape (expected {T,F,3,S}");
-	if (!out_sk_single_feed.is_fully_contiguous())
-	    throw runtime_error("SkKernel::launch: expected 'out_sk_single_feed' array to be fully contiguous");
-	if (!out_sk_single_feed.on_gpu())
-	    throw runtime_error("SkKernel::launch: expected 'out_sk_single_feed' to be in GPU memory");
     }
 
     if (out_rfimask.data != NULL) {
-	if (!out_rfimask.shape_equals({F,(T*Nds)/32}))
+	check_array(out_rfimask, "SkKernel::launch", "out_rfimask", 2, false);   // ndim=2, contiguous=false
+	
+	if (!out_rfimask.shape_equals({F,(T*params.Nds)/32}))
 	    throw runtime_error("SkKernel::launch: 'out_rfimask' array has wrong shape (expected {F,(T*Nds)/32})");
 	if (out_rfimask.strides[1] != 1)
 	    throw runtime_error("SkKernel::launch: expected inner (time) axis of 'out_rfimask' array to be contiguous");
-	if (!out_rfimask.on_gpu())
-	    throw runtime_error("SkKernel::launch: expected 'out_rfimask' to be in GPU memory");
     }
     
     this->launch(

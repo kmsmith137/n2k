@@ -10,6 +10,10 @@ namespace n2k {
 #endif
 
 
+// Max number of stations (i.e. dish,pol pairs) throughout the RFI kernels.
+static constexpr int rfi_max_stations = 4096;
+
+
 // For a description of the X-engine RFI flagging logic, see the high-level
 // software overleaf ("RFI statistics computed on GPU" section). The RFI code
 // will be hard to understand unless you're familiar with this document!
@@ -67,10 +71,12 @@ namespace n2k {
 // Computes S0 from packet loss mask, downsampling in time by specified factor 'Nds'.
 //
 // Constraints:
-//   - Nds must be even (but note that the SK-kernel requires Nds to be a multiple of 32)
+//   - Nds must be even (but note that the SK-kernel subsequently requires Nds to be a multiple of 32)
 //   - S must be a multiple of 128 (required by packet loss array layout, see s0_kernel.cu)
 //   - T must be a multiple of 128 (required by packet loss array layout, see s0_kernel.cu)
 //   - T must be a multiple of Nds.
+//   - out_fstride must be a multiple of 4.
+//   - out_fstride must be >= S.
 //
 // Note: the packet loss mask has a nontrivial array layout. See either the software overleaf
 // (section "Data sent from CPU to GPU in each kotekan frame"), or comments in s0_kernel.cu.
@@ -112,6 +118,12 @@ extern void launch_s0_kernel(
 // Kernel 2/5: launch_s12_kernel().
 //
 // Computes S1,S2 from E-array, downsampling in time by specified factor 'Nds'.
+//
+// Constraints:
+//   - S must be a multiple of 128.
+//   - T must be a multiple of Nds.
+//   - out_fstride must be a multiple of 4.
+//   - out_fstride must be >= 2*S
 //
 // Note: the s12_kernel does not need the packet loss mask as an input. This is because
 // the E-array is assumed to be zeroed for missing packets. (See overleaf notes, section
@@ -168,6 +180,10 @@ extern void launch_s12_kernel(
 // Note: the last three indices in the above arrays are "spectator" indices as far as
 // this kernel is concerned, and can be replaced by a single spectator index with length
 // M = (3*F*S). (As usual, S denotes number of stations, i.e. 2*D, where D = number of dishes.)
+//
+// Constraints:
+//   - T must be a multiple of Nds
+//   - M must be a multiple of 32
 
 
 // Version 1: bare-pointer interface.
@@ -207,6 +223,11 @@ extern void launch_s012_time_downsample_kernel(
 // Note: the first three indices in the above arrays are "spectator" indices as far as
 // this kernel is concerned, and can be replaced by a single spectator index with length
 // M = (3*T*F).
+//
+// Constraints:
+//   - S must be a multiple of 128
+//   - S must be <= rfi_max_stations
+//   - No constraint on M.
 
 
 // Version 1: bare-pointer interface.
@@ -282,6 +303,11 @@ extern void launch_s012_station_downsample_kernel(
 // Reminder: users of the SK-arrays (either single-feed SK or feed-averaged SK) should
 // test for negative values of sigma. There are several reasons that an SK-array element
 // can be invalid (masked), and this is indicated by setting sigma to a negative value.
+//
+// Constraints:
+//
+//   - S must be a multiple of 128.
+//   - S must be <= rfi_max_stations.
 
 
 struct SkKernel
@@ -314,7 +340,7 @@ struct SkKernel
     Params params;
 
     // Bare-pointer launch() interface.
-    // Launches asynchronosly (i.e. does not synchronize stream or device after launching kernel.)
+    // Launches asynchronously (i.e. does not synchronize stream or device after launching kernel.)
     
     void launch(
         float *out_sk_feed_averaged,          // Shape (T,F,3)
@@ -330,7 +356,7 @@ struct SkKernel
 	bool check_params = true) const;
     
     // gputils::Array<> interface to launch().
-    // Launches asynchronosly (i.e. does not synchronize stream or device after launching kernel.)
+    // Launches asynchronously (i.e. does not synchronize stream or device after launching kernel.)
 
     void launch(
         gputils::Array<float> &out_sk_feed_averaged,   // Shape (T,F,3)

@@ -346,21 +346,22 @@ void launch_pl_1bit_correlator(int *counts, const ulong *pl_mask, const uint *rf
 	throw runtime_error("launch_pl_1bit_correlator: expected rfimask_fstride >= T/32");
     if (T <= 0)
 	throw runtime_error("launch_pl_1bit_correlator: expected T > 0");
-    if (T <= 0)
-	throw runtime_error("launch_pl_1bit_correlator: expected T > 0");
     if (F <= 0)
 	throw runtime_error("launch_pl_1bit_correlator: expected F > 0");
+    if (Sds <= 0)
+	throw runtime_error("launch_pl_1bit_correlator: expected Sds > 0");
     if (Nds <= 0)
 	throw runtime_error("launch_pl_1bit_correlator: expected Nds > 0");
-    if (Nds % 128)
+    if (Nds & 127)
 	throw runtime_error("launch_pl_1bit_correlator: expected Nds to be a multiple of 128 (could be relaxed)");
-    if (T % Nds)
-	throw runtime_error("launch_pl_1bit_correlator: expected T to be a multiple of Nds");
 
-    // FIXME 32-bit overflow checks
-    
     long Tout = T / Nds;
     uint N128 = Nds >> 7;
+    
+    if (T % Nds)
+	throw runtime_error("launch_pl_1bit_correlator: expected T to be a multiple of Nds");
+    if ((Tout >= INT_MAX) || (N128 >= INT_MAX) || (2*F*Sds >= INT_MAX))	
+	throw runtime_error("launch_pl_1bit_correlator: 32-bit overflow");
 
     if (Sds == 16) {
 	dim3 nthreads = {32, 2, 2};
@@ -393,7 +394,7 @@ void launch_pl_1bit_correlator(Array<int> &counts, const Array<ulong> &pl_mask, 
     // counts shape = (T/Nds, F, ntiles, 8, 8)
     // rfimask shape = (F, T/32)
     
-    check_array(counts, "launch_pl_1bit_correlator", "counts", 5, true);       // contiguous=true
+    check_array(counts, "launch_pl_1bit_correlator", "counts", 5, true);     // contiguous=true
     check_array(pl_mask, "launch_pl_1bit_correlator", "pl_mask", 3, true);   // contiguous=true
     check_array(rfimask, "launch_pl_1bit_correlator", "rfimask", 2, false);  // contiguous=false
     
@@ -404,12 +405,12 @@ void launch_pl_1bit_correlator(Array<int> &counts, const Array<ulong> &pl_mask, 
 
     if (Nds <= 0)
 	throw runtime_error("launch_pl_1bit_correlator: expected Nds > 0");
-    if (Nds % 128)
+    if (Nds & 127)
 	throw runtime_error("launch_pl_1bit_correlator: expected Nds to be a multiple of 128 (could be relaxed)");
+    if (Sds & 7)
+	throw runtime_error("launch_pl_1bit_correlator: expected Sds to be a multiple of 8");;
     if (T % Nds)
 	throw runtime_error("launch_pl_1bit_correlator: expected T to be a multiple of Nds");
-    if (Sds % 8)
-	throw runtime_error("launch_pl_1bit_correlator: expected Sds to be a multiple of 8");;
 
     if (!counts.shape_equals({T/Nds,F,ntiles,8,8})) {
 	stringstream ss;

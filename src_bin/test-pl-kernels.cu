@@ -9,7 +9,6 @@ using namespace n2k;
 using namespace gputils;
 
 
-// FIXME could be improved.
 inline uint bit_count(ulong x)
 {
     int ret = 0;
@@ -180,7 +179,8 @@ static void test_pl_1bit_correlator(long T, long F, long Sds, long Nds, long rfi
 static void test_pl_1bit_correlator()
 {
     for (int n = 0; n < 100; n++) {
-	long Sds = rand_int(0,2) ? 16 : 128;  // for now
+	// For now, only Sds=16 and Sds=128 are implemented.
+	long Sds = rand_int(0,2) ? 16 : 128;
 	
 	// v = (T/Nds, F, Nds/128)
 	vector<ssize_t> v = gputils::random_integers_with_bounded_product(3, 10*1000*1000/(Sds*Sds));

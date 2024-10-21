@@ -571,9 +571,9 @@ static void test_s0_kernel()
 // Test s12_kernel
 
 
-static void test_s12_kernel(int Nds, int Tout, int F, int S, int fstride, bool offset_encoded)
+static void test_s12_kernel(int Tout, int F, int S, int Nds, int fstride, bool offset_encoded)
 {
-    cout << "test_s12_kernel: Nds=" << Nds << ", Tout=" << Tout << ", F=" << F << ", S=" << S
+    cout << "test_s12_kernel: Tout=" << Tout << ", F=" << F << ", S=" << S << ", Nds=" << Nds
 	 << ", fstride=" << fstride << ", offset_encoded=" << offset_encoded << endl;
 
     long Tin = Tout * Nds;
@@ -607,15 +607,16 @@ static void test_s12_kernel(int Nds, int Tout, int F, int S, int fstride, bool o
 
 static void test_s12_kernel()
 {
-    // FIXME make this global, and use in many unit tests / asserts.
-    const int max_stations = 4096;
-    
     for (int n = 0; n < 100; n++) {
-	int S = 128 * rand_int(1, (max_stations/128)+1);
+	// (Tout, F, S/128, Nds)
+	vector<ssize_t> v = gputils::random_integers_with_bounded_product(4, 400000);
+	long Tout = v[0];
+	long F = v[1];
+	long S = 128 * v[2];
+	long Nds = v[3];
 	int fstride = 4 * rand_int(S/2, S+1);
 	bool offset_encoded = rand_int(0,2);
-	vector<ssize_t> v = gputils::random_integers_with_bounded_product(3, 400000/S);
-	test_s12_kernel(v[0], v[1], v[2], S, fstride, offset_encoded);  // (Nds,Tout,F,S,fstride,offset_encoded)
+	test_s12_kernel(Tout, F, S, Nds, fstride, offset_encoded);
     }
 }
 
@@ -625,9 +626,9 @@ static void test_s12_kernel()
 // Test s012_time_downsample
 
 
-static void test_s012_time_downsample(int Nds, int Tout, int F, int S)
+static void test_s012_time_downsample(int Tout, int F, int S, int Nds)
 {
-    cout << "test_s012_time_downsample: Nds=" << Nds << ", Tout=" << Tout << ", F=" << F << ", S=" << S << endl;
+    cout << "test_s012_time_downsample: Tout=" << Tout << ", F=" << F << ", S=" << S << ", Nds=" << Nds << endl;
 
     long Tin = Tout * Nds;
     Array<ulong> s_in = make_random_s012_array(Tin,F,S);  // shape (Tin,F,3,S)
@@ -653,7 +654,11 @@ static void test_s012_time_downsample()
 {
     for (int n = 0; n < 100; n++) {
 	vector<ssize_t> v = gputils::random_integers_with_bounded_product(4, 100);
-	test_s012_time_downsample(v[0], v[1], v[2], 32*v[3]);  // (Nds, Tout, F, S)
+	long Tout = v[0];
+	long F = v[1];
+	long S = 32 * v[2];
+	long Nds = v[3];
+	test_s012_time_downsample(Tout, F, S, Nds);
     }
 }
 
@@ -690,11 +695,8 @@ static void test_s012_station_downsample(int T, int F, int S)
 
 static void test_s012_station_downsample()
 {
-    // FIXME make this global, and use in many unit tests / asserts.
-    const int max_stations = 4096;
-    
     for (int n = 0; n < 100; n++) {
-	int S = 128 * rand_int(1, (max_stations/128)+1);
+	long S = 128 * rand_int(1, rfi_max_stations/128);
 	vector<ssize_t> v = gputils::random_integers_with_bounded_product(2, 400000/S);
 	test_s012_station_downsample(v[0], v[1], S);  // (T,F,S)
     }
@@ -826,11 +828,11 @@ struct TestInstance
     void _init_valid_S0_S1(int s)
     {
 	long S0_edge = round(single_feed_min_good_frac * Nds);
-	S0[s] = rand_int(S0_edge+1, Nds+1);   // FIXME rand_long()?
+	S0[s] = rand_int(S0_edge+1, Nds+1);
 	
 	long S1_edge0 = round(mu_min * S0[s]);
 	long S1_edge1 = round(mu_max * S0[s]);
-	S1[s] = rand_int(S1_edge0+1, S1_edge1);   // FIXME rand_long()?
+	S1[s] = rand_int(S1_edge0+1, S1_edge1);
     }
 
 
@@ -838,9 +840,9 @@ struct TestInstance
     void _init_invalid_S0_S1(int s)
     {
 	for (;;) {
-	    S0[s] = rand_int(-Nds/32, Nds+1);  // FIXME rand_long()?
+	    S0[s] = rand_int(-Nds/32, Nds+1);
 	    S0[s] = max(S0[s], 0L);
-	    S1[s] = rand_int(0, 98*S0[s]+1);   // FIXME rand_long()?
+	    S1[s] = rand_int(0, 98*S0[s]+1);
 	    
 	    long S0_edge = round(single_feed_min_good_frac * Nds);
 	    long S1_edge0 = round(mu_min * S0[s]);
@@ -1004,7 +1006,7 @@ static void test_sk_kernel()
     for (int n = 0; n < 500; n++) {
 	long T = rand_int(1, 21);
 	long F = rand_int(1, 21);
-	long S = 128 * rand_int(1, 17);
+	long S = 128 * rand_int(1, rfi_max_stations/128);
 	long Nds = 32 * rand_int(4, 11);
 	bool check_sf_sk = (rand_uniform() < 0.9);
 	bool check_rfimask = (rand_uniform() < 0.9);
