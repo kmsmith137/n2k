@@ -960,7 +960,6 @@ static void test_sk_kernel(const TestInstance &ti, bool check_sf_sk=true, bool c
     Array<uint8_t> gpu_bf_mask = ti.in_bf_mask.to_gpu();
 
     // Output arrays
-    // FIXME test rfimask_fstride.
     Array<float> gpu_sk_feed_averaged({T,F,3}, af_gpu | af_random);
     Array<float> gpu_sk_single_feed;
     Array<uint> gpu_rfimask;

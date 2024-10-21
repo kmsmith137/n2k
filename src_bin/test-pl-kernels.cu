@@ -121,7 +121,7 @@ static void test_pl_1bit_correlator(long T, long F, long Sds, long Nds, long rfi
     long ntiles = ((Sds/8) * ((Sds/8)+1)) / 2;
     
     Array<ulong> pl_cpu({T/64,F,Sds}, af_rhost | af_zero);
-    Array<uint> rfimask_cpu({F,T/32}, {rfimask_fstride,1}, af_rhost | af_zero);
+    Array<uint> rfimask_cpu({F,T/32}, af_rhost | af_zero);
     Array<int> counts_cpu({Tout,F,ntiles,8,8}, af_uhost);
     Array<int> counts_gpu({Tout,F,ntiles,8,8}, af_gpu | af_guard);
 
@@ -133,7 +133,8 @@ static void test_pl_1bit_correlator(long T, long F, long Sds, long Nds, long rfi
 	    rfimask_cpu.data[f*rfimask_fstride + t32] = rand_uint();
     
     Array<ulong> pl_gpu = pl_cpu.to_gpu();
-    Array<uint> rfimask_gpu = rfimask_cpu.to_gpu();
+    Array<uint> rfimask_gpu({F,T/32}, {rfimask_fstride,1}, af_gpu | af_guard);  // note fstride
+    rfimask_gpu.fill(rfimask_cpu);
     launch_pl_1bit_correlator(counts_gpu, pl_gpu, rfimask_gpu, Nds);
     CUDA_CALL(cudaDeviceSynchronize());
 

@@ -502,7 +502,7 @@ void SkKernel::launch(
     // If an RFI bitmask is being computed, check 'rfimask_fstride' and 'sk_rfimask_sigmas' arguments,.
     
     if (out_rfimask != NULL) {
-	if (std::abs(rfimask_fstride) < ((T * params.Nds) / 32))
+	if (rfimask_fstride < ((T * params.Nds) / 32))
 	    throw runtime_error("SkKernel::launch: rfimask_fstride is too small");
 	if (F * std::abs(rfimask_fstride) >= INT_MAX)
 	    throw runtime_error("SkKernel::launch: product F*rfimask_fstride is too large (32-bit overflow)");
