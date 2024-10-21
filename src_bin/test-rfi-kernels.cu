@@ -216,18 +216,41 @@ static void test_bad_feed_mask()
 // FIXME this test could be improved.
 
 
+struct RandCubic
+{
+    vector<double> c;
+
+    RandCubic() : c(4)
+    {
+	gputils::randomize(&c[0], 4);
+    }
+
+    double eval(double x) const
+    {
+	double ret = 0.0;
+	for (int i = 0; i < 4; i++)
+	    ret += c[i] * pow(x,i);
+	return ret;
+    }
+};
+
+
 static void test_cubic_interpolate()
 {
     cout << "test_cubic_interpolate(): start" << endl;
-    vector<double> y(4);
+    
+    for (int i = 0; i < 100; i++) {
+	RandCubic c;
+	vector<double> y(4);
 
-    for (int i = 0; i < 10; i++) {
-	gputils::randomize(&y[0], 4);
-	for (int j = 0; j < 4; j++) {
-	    double z = cubic_interpolate(double(j-1), y[0], y[1], y[2], y[3]);
-	    double eps = std::abs(z - y[j]);
-	    assert(eps < 1.0e-12);
-	}
+	for (int i = 0; i < 4; i++)
+	    y[i] = c.eval(i-1);
+	
+	double x = gputils::rand_uniform();
+	double lhs = cubic_interpolate(x, y[0], y[1], y[2], y[3]);
+	double rhs = c.eval(x);
+	double eps = std::abs(lhs - rhs);
+	assert(eps < 1.0e-12);
     }
 
     cout << "test_cubic_interpolate(): pass" << endl;
