@@ -13,11 +13,19 @@ namespace n2k {
 #endif
 
 
-// FIXME double_bits() could be improved.
+// Input: 32-bit integer, represented as bit sequence [ x0 x1 ... x32 ].
+//
+// Output: "Doubled" bit sequence, represented as two 32-bit integers:
+//   ret.x = [ x0 x0 x1 x1 ... x15 x15 ]
+//   ret.y = [ x16 x16 x17 x17 ... x31 x31 ]
+//
+// Note: I tried a fancy bit-transposing implementation with lop3() and
+// __byte_perm(), but this boneheaded implementation was faster (?!).
+
 __device__ inline uint2 double_bits(uint x)
 {
     uint2 ret{0U,0U};
-    
+
     for (uint i = 0; i < 16; i++) {
 	uint x_shifted = x >> i;
 	uint bit_pair = 3U << (2*i);
