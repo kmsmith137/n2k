@@ -1,23 +1,21 @@
 #ifndef _N2K_HPP
 #define _N2K_HPP
 
+// (4+4) bit visibility matrix kernel.
 #include "n2k/Correlator.hpp"
-#include "n2k/launch_rfimask_maker.hpp"
-#include "n2k/launch_s0_kernel.hpp"
+
+// RFI kernels.
+#include "n2k/rfi_kernels.hpp"
+
+// PL mask kernels (including 1-bit visibility matrix)
+#include "n2k/pl_kernels.hpp"
 
 // Used internally
-// #include "n2k/Correlator_Kernel.hpp"
-
-// FIXME this will move to another .hpp file soon.
-namespace n2k { namespace sk_globals {
-    extern double mu_min;
-    extern double mu_max;
-    extern double xmin;
-    extern double xmax;
-    extern int nx;
-    extern int ny;
-    extern int n_min;
-    extern double *get_bias_coeffs();
-}}    // namespace n2k::sk_globals
+// #include "n2k/internals/CorrelatorKernel.hpp"
+// #include "n2k/internals/bad_feed_mask.hpp"
+// #include "n2k/internals/device_inlines.hpp"
+// #include "n2k/internals/internals.hpp"
+// #include "n2k/internals/interpolation.hpp"
+// #include "n2k/internals/sk_globals.hpp"
 
 #endif // _N2K_HPP

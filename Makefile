@@ -20,17 +20,28 @@ SHELL := /bin/bash
 HFILES = \
   include/n2k.hpp \
   include/n2k/Correlator.hpp \
-  include/n2k/CorrelatorKernel.hpp \
-  include/n2k/launch_rfimask_maker.hpp \
-  include/n2k/launch_s0_kernel.hpp
+  include/n2k/rfi_kernels.hpp \
+  include/n2k/pl_kernels.hpp \
+  include/n2k/internals/CorrelatorKernel.hpp \
+  include/n2k/internals/bad_feed_mask.hpp \
+  include/n2k/internals/device_inlines.hpp \
+  include/n2k/internals/internals.hpp \
+  include/n2k/internals/interpolation.hpp \
+  include/n2k/internals/sk_globals.hpp
 
 # Kernel filename syntax is kernel_{nstations}_{nfreq}.o
 OFILES = \
   src_lib/Correlator.o \
+  src_lib/SkKernel.o \
+  src_lib/internals.o \
   src_lib/kernel_table.o \
-  src_lib/make_rfimask.o \
+  src_lib/pl_1bit_correlator.o \
+  src_lib/pl_mask_expander.o \
   src_lib/precompute_offsets.o \
   src_lib/s0_kernel.o \
+  src_lib/s012_station_downsample.o \
+  src_lib/s012_time_downsample.o \
+  src_lib/s12_kernel.o \
   src_lib/sk_globals.o \
   template_instantiations/kernel_128_1.o \
   template_instantiations/kernel_128_2.o \
@@ -64,10 +75,12 @@ LIBFILES = \
 
 XFILES = \
   bin/test-correlator \
+  bin/test-pl-kernels \
+  bin/test-rfi-kernels \
   bin/time-correlator \
-  bin/test-make-rfimask \
-  bin/test-s0-kernel \
-  bin/test-sk-bias \
+  bin/time-pl-kernels \
+  bin/time-rfi-kernels \
+  bin/run-rfi-mcs \
   bin/scratch
 
 # Used in 'make clean', 'make source_files.txt'
@@ -118,7 +131,7 @@ bin/%: src_bin/%.o lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
 	$(NVCC) -o $@ $^
 
 install: $(LIBFILES)
-	mkdir -p $(INSTALL_DIR)/include
+	mkdir -p $(INSTALL_DIR)/include/n2k/internals
 	mkdir -p $(INSTALL_DIR)/lib
 	cp -rv lib $(INSTALL_DIR)/
 	cp -rv include $(INSTALL_DIR)/
