@@ -1,11 +1,12 @@
+#include <cassert>
 #include <iostream>
-#include <gputils.hpp>
+#include <ksgpu.hpp>
 
 #include "../include/n2k/Correlator.hpp"
 #include "../argparse/argparse.hpp"
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 using namespace n2k;
 
 
@@ -57,18 +58,18 @@ struct TimingParams
 
 	program.parse_args(argc, argv);
 
-	// Note: we use gputils::from_str<long>(program.get(xx)) instead of program.get<long>(xx), since the latter segfaults!
-	nstations = gputils::from_str<long> (program.get("--nstations"));
+	// Note: we use ksgpu::from_str<long>(program.get(xx)) instead of program.get<long>(xx), since the latter segfaults!
+	nstations = ksgpu::from_str<long> (program.get("--nstations"));
 	assert(nstations > 0);
 	assert((16384 % nstations) == 0);
 	
-	nfreq = program.is_used("--nfreq") ? gputils::from_str<long> (program.get("--nfreq")) : (16384/nstations);
+	nfreq = program.is_used("--nfreq") ? ksgpu::from_str<long> (program.get("--nfreq")) : (16384/nstations);
 	assert(nfreq > 0);
 	
-	nt_inner = gputils::from_str<long> (program.get("--nt-inner"));
-	nt_tot = gputils::from_str<long> (program.get("--nt-tot"));	
-	nstreams = gputils::from_str<long> (program.get("--nstreams"));
-	ncallbacks = gputils::from_str<long> (program.get("--ncallbacks"));
+	nt_inner = ksgpu::from_str<long> (program.get("--nt-inner"));
+	nt_tot = ksgpu::from_str<long> (program.get("--nt-tot"));	
+	nstreams = ksgpu::from_str<long> (program.get("--nstreams"));
+	ncallbacks = ksgpu::from_str<long> (program.get("--ncallbacks"));
 	randomize = (program["--randomize"] == true);
 	
 	assert(nt_tot > 0);
@@ -153,20 +154,15 @@ static void time_correlator(const TimingParams &params)
 	 << "slower than the long-run average, but the timing will quickly settle down.\n"
 	 << endl;
 
-    auto callback = [&](const CudaStreamPool &pool, cudaStream_t stream, int istream)
-	{
-	    corr.launch(varr[istream], earr[istream], rfimask[istream], nt_outer, nt_inner, stream);
-	};
-    
-    stringstream sp_name;
-    sp_name << "n2k (chord vsamp=" << chord_vsamp << ")";
-    
-    CudaStreamPool sp(callback, ncallbacks, nstreams, sp_name.str());
-    sp.monitor_time("CHORD real-time fraction", chord_datavol);
-    sp.run();
+    KernelTimer kt(ncallbacks, nstreams);
+    while (kt.next()) {
+	corr.launch(varr[kt.istream], earr[kt.istream], rfimask[kt.istream], nt_outer, nt_inner, kt.stream);
+	if (kt.warmed_up)
+	    cout << "n2k (chord vsamp=" << chord_vsamp << "): CHORD real-time fraction = " << (kt.dt / chord_datavol) << endl;
+    }
 
     // Wrapper script 'run.sh' will capture this last line with 'tail -1'.
-    cout << chord_vsamp << " " << (sp.time_per_callback / chord_datavol) << endl;
+    cout << chord_vsamp << " " << (kt.dt / chord_datavol) << endl;
 }
 
 

@@ -1,13 +1,13 @@
 #include <complex>
 #include <iostream>
-#include <gputils.hpp>
+#include <ksgpu.hpp>
 
 #include "../include/n2k/Correlator.hpp"
 #include "../include/n2k/internals/CorrelatorKernel.hpp"
 #include "../include/n2k/internals/internals.hpp"
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 using namespace n2k;
 
 
@@ -29,7 +29,7 @@ __host__ void test_negate_4bit()
     const int nelts = 1024*1024;
 
     Array<complex<int>> src = make_random_unpacked_e_array(nelts,1,1);  // shape (nelts,1,1)
-    src = src.reshape_ref({nelts});                                     // shape (nelts,)
+    src = src.reshape({nelts});                                         // shape (nelts,)
 
     Array<uint8_t> a = pack_e_array(src, false);          // offset_encoded=false
     a = a.to_gpu();
@@ -102,8 +102,8 @@ __host__ void test_transpose_rank8_4bit()
 
     for (int i = 0; i < nelts; i++) {
 	// Make 32 random bits.
-	uint x = gputils::default_rng();
-	uint y = gputils::default_rng();
+	uint x = ksgpu::default_rng();
+	uint y = ksgpu::default_rng();
 	src_cpu.data[i] = x ^ (y << 16);
     }
 
@@ -288,10 +288,10 @@ void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner, int M
     Array<uint> rfimask({nfreq,nt_tot/32}, af_rhost | af_zero);
 
     // Randomize rfimask.
-    // Note: I checked that gputils::default_rng() returns a uint in which all bits are random.
+    // Note: I checked that ksgpu::default_rng() returns a uint in which all bits are random.
     
     for (int i = 0; i < rfimask.size; i++)
-	rfimask.data[i] = gputils::default_rng();
+	rfimask.data[i] = ksgpu::default_rng();
     
     vector<int> ix(nstations);
     for (int i = 0; i < nstations; i++)
@@ -409,10 +409,10 @@ int main(int argc, char **argv)
 	double nbytes_v = 2048.0 * nfreq * nvtiles;    // multiply by (nt_outer)
 	
 	int max_multiplier = int((0.9999*maxbytes - nbytes_v) / (256. * nbytes_e));
-	int nt_inner = 256 * gputils::rand_int(1, min(max_multiplier,10)+1, rng);
+	int nt_inner = 256 * ksgpu::rand_int(1, min(max_multiplier,10)+1, rng);
 	
 	int max_nt_outer = int(maxbytes / (nt_inner*nbytes_e + nbytes_v));
-	int nt_outer = gputils::rand_int(1, max_nt_outer+1, rng);
+	int nt_outer = ksgpu::rand_int(1, max_nt_outer+1, rng);
 	test_correlator(nstations, nfreq, nt_outer, nt_inner);
     }
 

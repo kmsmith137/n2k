@@ -1,9 +1,10 @@
 #include "../include/n2k/rfi_kernels.hpp"
 
-#include <gputils/CudaStreamPool.hpp>
+#include <iostream>
+#include <ksgpu/KernelTimer.hpp>
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 using namespace n2k;
 
 
@@ -36,16 +37,16 @@ static void time_s0_kernel(const TimingParams &tp)
     string name = tp.name + " s0_kernel";
     double gb = 8.0e-9 * ninner * (S0.size + pl_mask.size);
 
-    auto callback = [&](const CudaStreamPool &pool, cudaStream_t stream, int istream)
-    {
-	for (int i = 0; i < ninner; i++)
-	    launch_s0_kernel(S0, pl_mask, Nds, stream);  // calls CUDA_PEEK()
-    };
+    double rt = ninner * tp.T * tp.baseband_dt;
 
-    CudaStreamPool sp(callback, nouter, 1, name);
-    sp.monitor_throughput("Global memory BW (GB/s)", gb);
-    sp.monitor_time("Real-time fraction", ninner * tp.T * tp.baseband_dt);
-    sp.run();
+    KernelTimer kt(nouter);
+    while (kt.next()) {
+	for (int i = 0; i < ninner; i++)
+	    launch_s0_kernel(S0, pl_mask, Nds, kt.stream);  // calls CUDA_PEEK()
+	if (kt.warmed_up)
+	    cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt)
+		 << ", Real-time fraction = " << (kt.dt / rt) << endl;
+    }
 }
 
 
@@ -66,16 +67,16 @@ static void time_s12_kernel(const TimingParams &tp)
     string name = tp.name + " s12_kernel";
     double gb = 1.0e-9 * ninner * (8*S12.size + E.size);
 
-    auto callback = [&](const CudaStreamPool &pool, cudaStream_t stream, int istream)
-    {
-	for (int i = 0; i < ninner; i++)
-	    launch_s12_kernel(S12, E, Nds, offset_encoded, stream);  // calls CUDA_PEEK()
-    };
+    double rt = ninner * tp.T * tp.baseband_dt;
 
-    CudaStreamPool sp(callback, nouter, 1, name);
-    sp.monitor_throughput("Global memory BW (GB/s)", gb);
-    sp.monitor_time("Real-time fraction", ninner * tp.T * tp.baseband_dt);
-    sp.run();
+    KernelTimer kt(nouter);
+    while (kt.next()) {
+	for (int i = 0; i < ninner; i++)
+	    launch_s12_kernel(S12, E, Nds, offset_encoded, kt.stream);  // calls CUDA_PEEK()
+	if (kt.warmed_up)
+	    cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt)
+		 << ", Real-time fraction = " << (kt.dt / rt) << endl;
+    }
 }
 
 
@@ -95,16 +96,16 @@ static void time_s012_time_downsample(const TimingParams &tp)
     string name = tp.name + " s012_time_downsample";
     double gb = 8.0e-9 * ninner * (Sout.size + Sin.size);
 
-    auto callback = [&](const CudaStreamPool &pool, cudaStream_t stream, int istream)
-    {
-	for (int i = 0; i < ninner; i++)
-	    launch_s012_time_downsample_kernel(Sout, Sin, Nds, stream);  // calls CUDA_PEEK()
-    };
+    double rt = ninner * tp.T * tp.baseband_dt;
 
-    CudaStreamPool sp(callback, nouter, 1, name);
-    sp.monitor_throughput("Global memory BW (GB/s)", gb);
-    sp.monitor_time("Real-time fraction", ninner * tp.T * tp.baseband_dt);
-    sp.run();
+    KernelTimer kt(nouter);
+    while (kt.next()) {
+	for (int i = 0; i < ninner; i++)
+	    launch_s012_time_downsample_kernel(Sout, Sin, Nds, kt.stream);  // calls CUDA_PEEK()
+	if (kt.warmed_up)
+	    cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt)
+		 << ", Real-time fraction = " << (kt.dt / rt) << endl;
+    }
 }
 
 
@@ -124,16 +125,16 @@ static void time_s012_station_downsample(const TimingParams &tp)
     string name = tp.name + " s012_station_downsample";
     double gb = 8.0e-9 * ninner * (Sout.size + Sin.size);
 
-    auto callback = [&](const CudaStreamPool &pool, cudaStream_t stream, int istream)
-    {
-	for (int i = 0; i < ninner; i++)
-	    launch_s012_station_downsample_kernel(Sout, Sin, bf_mask, stream);  // calls CUDA_PEEK()
-    };
+    double rt = ninner * tp.T * tp.baseband_dt;
 
-    CudaStreamPool sp(callback, nouter, 1, name);
-    sp.monitor_throughput("Global memory BW (GB/s)", gb);
-    sp.monitor_time("Real-time fraction", ninner * tp.T * tp.baseband_dt);
-    sp.run();
+    KernelTimer kt(nouter);
+    while (kt.next()) {
+	for (int i = 0; i < ninner; i++)
+	    launch_s012_station_downsample_kernel(Sout, Sin, bf_mask, kt.stream);  // calls CUDA_PEEK()
+	if (kt.warmed_up)
+	    cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt)
+		 << ", Real-time fraction = " << (kt.dt / rt) << endl;
+    }
 }
 
 
@@ -175,16 +176,16 @@ static void time_sk_kernel(const TimingParams &tp, bool first_flag)
     gb += 4.0e-9 * ninner * out_sk_single_feed.size;
     gb += 4.0e-9 * ninner * out_rfimask.size;
 
-    auto callback = [&](const CudaStreamPool &pool, cudaStream_t stream, int istream)
-    {
+    double rt = ninner * tp.T * tp.baseband_dt;
+
+    KernelTimer kt(nouter);
+    while (kt.next()) {
 	for (int i = 0; i < ninner; i++)
-	    kernel.launch(out_sk_feed_averaged, out_sk_single_feed, out_rfimask, in_S012, in_bf_mask, stream);  // calls CUDA_PEEK()
-    };
-    
-    CudaStreamPool sp(callback, nouter, 1, name);
-    sp.monitor_throughput("Global memory BW (GB/s)", gb);
-    sp.monitor_time("Real-time fraction", ninner * tp.T * tp.baseband_dt);
-    sp.run();
+	    kernel.launch(out_sk_feed_averaged, out_sk_single_feed, out_rfimask, in_S012, in_bf_mask, kt.stream);  // calls CUDA_PEEK()
+	if (kt.warmed_up)
+	    cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt)
+		 << ", Real-time fraction = " << (kt.dt / rt) << endl;
+    }
 }
 
 

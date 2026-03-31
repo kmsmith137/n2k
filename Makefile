@@ -7,11 +7,11 @@ ARCH += -gencode arch=compute_86,code=sm_86
 ARCH += -gencode arch=compute_89,code=sm_89
 # ARCH += -gencode arch=compute_90,code=sm_90
 
-GPUTILS_INCDIR=../gputils/include
-GPUTILS_LIBDIR=../gputils/lib
+KSGPU_INCDIR=../ksgpu/include
+KSGPU_LIBDIR=../ksgpu/lib
 INSTALL_DIR ?= /usr/local
 
-NVCC=nvcc -std=c++17 $(ARCH) -m64 -O3 -I$(GPUTILS_INCDIR) --compiler-options -Wall,-fPIC
+NVCC=nvcc -std=c++17 $(ARCH) -m64 -O3 -I$(KSGPU_INCDIR) --compiler-options -Wall,-fPIC
 SHELL := /bin/bash
 
 .DEFAULT_GOAL: all
@@ -126,7 +126,7 @@ lib/libn2k.so: $(OFILES)
 #	ar rcs $@ $^
 #	ranlib $@
 
-bin/%: src_bin/%.o lib/libn2k.so $(GPUTILS_LIBDIR)/libgputils.so
+bin/%: src_bin/%.o lib/libn2k.so $(KSGPU_LIBDIR)/libksgpu.so
 	@mkdir -p bin
 	$(NVCC) -o $@ $^
 

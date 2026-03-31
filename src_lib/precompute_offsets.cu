@@ -1,8 +1,10 @@
-#include <gputils.hpp>
+#include <ksgpu.hpp>
+
+#include <cassert>
 #include "../include/n2k/Correlator.hpp"
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 using namespace n2k;
 
 

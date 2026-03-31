@@ -4,21 +4,21 @@
 #include "../include/n2k/internals/bad_feed_mask.hpp"
 
 #include <iostream>
-#include <gputils/Array.hpp>
-#include <gputils/cuda_utils.hpp>
-#include <gputils/rand_utils.hpp>
-#include <gputils/test_utils.hpp>
+#include <ksgpu/Array.hpp>
+#include <ksgpu/cuda_utils.hpp>
+#include <ksgpu/rand_utils.hpp>
+#include <ksgpu/test_utils.hpp>
 
 using namespace std;
 using namespace n2k;
-using namespace gputils;
+using namespace ksgpu;
 
 
 
 // FIXME improve make_random_s012_array()?
 static Array<ulong> make_random_s012_array(int T, int F, int S)
 {
-    std::mt19937 &rng = gputils::default_rng;
+    std::mt19937 &rng = ksgpu::default_rng;
     auto dist = std::uniform_int_distribution<uint>(0, 1000);
 
     Array<ulong> ret({T,F,3,S}, af_rhost);
@@ -114,7 +114,7 @@ __global__ void transpose_bit_with_lane_kernel(uint *dst, const uint *src, uint 
 static void test_transpose_bit_with_lane(uint bit, uint lane)
 {
     cout << "test_transpose_bit_with_lane: bit=" << bit << ", lane=" << lane << endl;
-    std::mt19937 &rng = gputils::default_rng;
+    std::mt19937 &rng = ksgpu::default_rng;
 
     Array<uint> src({32}, af_rhost);
     for (int i = 0; i < 32; i++)
@@ -221,7 +221,7 @@ struct RandCubic
 
     RandCubic() : c(4)
     {
-	gputils::randomize(&c[0], 4);
+	ksgpu::randomize(&c[0], 4);
     }
 
     double eval(double x) const
@@ -245,7 +245,7 @@ static void test_cubic_interpolate()
 	for (int i = 0; i < 4; i++)
 	    y[i] = c.eval(i-1);
 	
-	double x = gputils::rand_uniform();
+	double x = ksgpu::rand_uniform();
 	double lhs = cubic_interpolate(x, y[0], y[1], y[2], y[3]);
 	double rhs = c.eval(x);
 	double eps = std::abs(lhs - rhs);
@@ -552,7 +552,7 @@ static void test_s0_kernel(const Array<ulong> &pl_mask, long T, long F, long S, 
     Array<ulong> pl_mask_gpu = pl_mask.to_gpu();
     launch_s0_kernel(s0_gpu, pl_mask_gpu, Nds);
     
-    gputils::assert_arrays_equal(s0_ref, s0_gpu, "cpu", "gpu", {"tds","f","s"});
+    ksgpu::assert_arrays_equal(s0_ref, s0_gpu, "cpu", "gpu", {"tds","f","s"});
 }
 
 
@@ -577,7 +577,7 @@ static void test_s0_kernel()
 	long Nds = 2 * rand_int(1, 200);
 	long Tdiv = std::lcm(Nds, 128);
 	
-	vector<ssize_t> v = gputils::random_integers_with_bounded_product(3, (1000*1000)/Tdiv);
+	vector<ssize_t> v = ksgpu::random_integers_with_bounded_product(3, (1000*1000)/Tdiv);
 	long T = v[0]*Tdiv;
 	long F = v[1];
 	long S = v[2]*128;
@@ -631,7 +631,7 @@ static void test_s12_kernel()
 {
     for (int n = 0; n < 100; n++) {
 	// (Tout, F, S/128, Nds)
-	vector<ssize_t> v = gputils::random_integers_with_bounded_product(4, 400000);
+	vector<ssize_t> v = ksgpu::random_integers_with_bounded_product(4, 400000);
 	long Tout = v[0];
 	long F = v[1];
 	long S = 128 * v[2];
@@ -675,7 +675,7 @@ static void test_s012_time_downsample(int Tout, int F, int S, int Nds)
 static void test_s012_time_downsample()
 {
     for (int n = 0; n < 100; n++) {
-	vector<ssize_t> v = gputils::random_integers_with_bounded_product(4, 100);
+	vector<ssize_t> v = ksgpu::random_integers_with_bounded_product(4, 100);
 	long Tout = v[0];
 	long F = v[1];
 	long S = 32 * v[2];
@@ -719,7 +719,7 @@ static void test_s012_station_downsample()
 {
     for (int n = 0; n < 100; n++) {
 	long S = 128 * rand_int(1, rfi_max_stations/128);
-	vector<ssize_t> v = gputils::random_integers_with_bounded_product(2, 400000/S);
+	vector<ssize_t> v = ksgpu::random_integers_with_bounded_product(2, 400000/S);
 	test_s012_station_downsample(v[0], v[1], S);  // (T,F,S)
     }
 }
@@ -1013,12 +1013,12 @@ static void test_sk_kernel(const TestInstance &ti, bool check_sf_sk=true, bool c
     CUDA_CALL(cudaDeviceSynchronize());
 
     if (check_sf_sk)
-	gputils::assert_arrays_equal(gpu_sk_single_feed, ti.out_sk_single_feed, "gpu_sf_sk", "ref_sf_sk", {"t","f","n","s"});
+	ksgpu::assert_arrays_equal(gpu_sk_single_feed, ti.out_sk_single_feed, "gpu_sf_sk", "ref_sf_sk", {"t","f","n","s"});
 	
-    gputils::assert_arrays_equal(gpu_sk_feed_averaged, ti.out_sk_feed_averaged, "gpu_fsum_sk", "ref_fsum_sk", {"t","f","n"});
+    ksgpu::assert_arrays_equal(gpu_sk_feed_averaged, ti.out_sk_feed_averaged, "gpu_fsum_sk", "ref_fsum_sk", {"t","f","n"});
 
     if (check_rfimask)
-	gputils::assert_arrays_equal(gpu_rfimask, ti.out_rfimask, "gpu_rfimask", "ref_rfimask", {"f","t32"});
+	ksgpu::assert_arrays_equal(gpu_rfimask, ti.out_rfimask, "gpu_rfimask", "ref_rfimask", {"f","t32"});
 }
 
 

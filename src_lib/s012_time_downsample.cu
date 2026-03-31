@@ -1,10 +1,10 @@
 #include "../include/n2k/rfi_kernels.hpp"
 #include "../include/n2k/internals/internals.hpp"
 
-#include <gputils/cuda_utils.hpp>
+#include <ksgpu/cuda_utils.hpp>
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 
 
 namespace n2k {
@@ -86,7 +86,7 @@ void launch_s012_time_downsample_kernel(ulong *Sout, const ulong *Sin, long T, l
 	throw runtime_error("launch_s012_time_downsample_kernel(): T must be a multiple of Nds");	
     
     dim3 nblocks, nthreads;
-    gputils::assign_kernel_dims(nblocks, nthreads, M, Tds, 1, threads_per_block, noisy);
+    ksgpu::assign_kernel_dims(nblocks, nthreads, M, Tds, 1, threads_per_block, noisy);
 
     s012_time_downsample_kernel <<< nblocks, nthreads, 0, stream >>>
 	(Sout, Sin, Tds, M, Nds);

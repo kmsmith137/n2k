@@ -4,7 +4,7 @@
 
 using namespace std;
 using namespace n2k;
-using namespace gputils;
+using namespace ksgpu;
 
 
 int main(int argc, char **argv)

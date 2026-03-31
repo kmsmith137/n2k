@@ -1,10 +1,10 @@
 #include "../include/n2k/rfi_kernels.hpp"
 #include "../include/n2k/internals/internals.hpp"
 
-#include <gputils/cuda_utils.hpp>
+#include <ksgpu/cuda_utils.hpp>
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 
 
 // This is a good place to describe the array layout for PL mask.
@@ -106,7 +106,7 @@ __device__ uint _cmask(int b)
 //   - Within the larger kernel, the warp mapping is:
 //       wz wy wx <-> (tds) (f/4) (s/128)
 
-__global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int Nds, int out_fstride4)
+__global__ void s0_kernel(ulong4_32a *s0, const uint *pl, int T, int F, int S, int Nds, int out_fstride4)
 {
     static constexpr uint ALL_LANES = 0xffffffffU;
     
@@ -165,7 +165,7 @@ __global__ void s0_kernel(ulong4 *s0, const uint *pl, int T, int F, int S, int N
     s0_accum <<= 1;
     s0_accum += __shfl_sync(ALL_LANES, s0_accum, threadIdx.x ^ 0x1);
 
-    ulong4 s0_x4;
+    ulong4_32a s0_x4;
     s0_x4.x = s0_accum;
     s0_x4.y = s0_accum;
     s0_x4.z = s0_accum;
@@ -211,38 +211,40 @@ void launch_s0_kernel(ulong *s0, const ulong *pl_mask, long T, long F, long S, l
     // Note: this kernel does not assume (S <= rfi_max_stations).
 
     if (!s0 || !pl_mask)
-	throw runtime_error("launch_s0_kernel: null pointer was specified");	
+        throw runtime_error("launch_s0_kernel: null pointer was specified");
+    if ((reinterpret_cast<uintptr_t>(s0) % 32) != 0)
+        throw runtime_error("launch_s0_kernel: 's0' pointer must be 32-byte aligned");
     if (T <= 0)
-	throw runtime_error("launch_s0_kernel: number of time samples T must be > 0");
+        throw runtime_error("launch_s0_kernel: number of time samples T must be > 0");
     if (T & 127)
-	throw runtime_error("launch_s0_kernel: number of time samples T must be a multiple of 128");
+        throw runtime_error("launch_s0_kernel: number of time samples T must be a multiple of 128");
     if (F <= 0)
-	throw runtime_error("launch_s0_kernel: number of frequency samples F must be > 0");
+        throw runtime_error("launch_s0_kernel: number of frequency samples F must be > 0");
     if (S <= 0)
-	throw runtime_error("launch_s0_kernel: number of stations S must be > 0");
+        throw runtime_error("launch_s0_kernel: number of stations S must be > 0");
     if (S & 127)
-	throw runtime_error("launch_s0_kernel: number of stations S must be a multiple of 128");
+        throw runtime_error("launch_s0_kernel: number of stations S must be a multiple of 128");
     if (Nds <= 0)
-	throw runtime_error("launch_s0_kernel: downsampling factor 'Nds' must be positive");
+        throw runtime_error("launch_s0_kernel: downsampling factor 'Nds' must be positive");
     if (Nds & 1)
-	throw runtime_error("launch_s0_kernel: downsampling factor 'Nds' must be even");
+        throw runtime_error("launch_s0_kernel: downsampling factor 'Nds' must be even");
     if (out_fstride < S)
-	throw runtime_error("launch_s0_kernel(): out_fstride must be >= S");	
+        throw runtime_error("launch_s0_kernel(): out_fstride must be >= S");	
     if (out_fstride & 3)
-	throw runtime_error("launch_s0_kernel(): out_fstride must be a multiple of 4");
+        throw runtime_error("launch_s0_kernel(): out_fstride must be a multiple of 4");
     if ((T >= INT_MAX) || (F >= INT_MAX) || (S >= INT_MAX) || (Nds >= INT_MAX) || (out_fstride >= INT_MAX))
-	throw runtime_error("launch_s0_kernel(): 32-bit overflow");
-
+        throw runtime_error("launch_s0_kernel(): 32-bit overflow");
+    
     long Tds = T / Nds;
     
     if (T != (Tds * Nds))
 	throw runtime_error("launch_s0_kernel: number of time samples T must be a multiple of downsampling factor 'Nds'");
 
     dim3 nblocks, nthreads;
-    gputils::assign_kernel_dims(nblocks, nthreads, S >> 2, (F+3) >> 2, Tds);
+    ksgpu::assign_kernel_dims(nblocks, nthreads, S >> 2, (F+3) >> 2, Tds);
 
     s0_kernel <<< nblocks, nthreads, 0, stream >>>
-	((ulong4 *) s0, (const uint *) pl_mask, T, F, S, Nds, out_fstride >> 2);
+        ((ulong4_32a *) s0, (const uint *) pl_mask, T, F, S, Nds, out_fstride >> 2);
     
     CUDA_PEEK("s0_kernel launch");
 }

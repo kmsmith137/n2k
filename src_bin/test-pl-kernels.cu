@@ -1,12 +1,13 @@
 #include "../include/n2k/pl_kernels.hpp"
 
-#include <gputils/cuda_utils.hpp>
-#include <gputils/rand_utils.hpp>
-#include <gputils/test_utils.hpp>
+#include <cassert>
+#include <ksgpu/cuda_utils.hpp>
+#include <ksgpu/rand_utils.hpp>
+#include <ksgpu/test_utils.hpp>
 
 using namespace std;
 using namespace n2k;
-using namespace gputils;
+using namespace ksgpu;
 
 
 inline uint bit_count(ulong x)
@@ -37,17 +38,17 @@ inline void double_bits(ulong &y0, ulong &y1, ulong x)
 
 inline uint rand_uint()
 {
-    uint x = uint(gputils::default_rng());
-    x ^= (uint(gputils::default_rng()) << 16);
+    uint x = uint(ksgpu::default_rng());
+    x ^= (uint(ksgpu::default_rng()) << 16);
     return x;
 }
 
 
 inline ulong rand_ulong()
 {
-    ulong x = ulong(gputils::default_rng());
-    x ^= (ulong(gputils::default_rng()) << 22);
-    x ^= (ulong(gputils::default_rng()) << 44);
+    ulong x = ulong(ksgpu::default_rng());
+    x ^= (ulong(ksgpu::default_rng()) << 22);
+    x ^= (ulong(ksgpu::default_rng()) << 44);
     return x;
 }
 
@@ -90,7 +91,7 @@ static void test_pl_mask_expander(long Tout, long Fout, long Sds)
 	}
     }
 
-    gputils::assert_arrays_equal(pl_out_cpu, pl_out_gpu, "cpu", "gpu", {"t64","f","s"});
+    ksgpu::assert_arrays_equal(pl_out_cpu, pl_out_gpu, "cpu", "gpu", {"t64","f","s"});
 }
 
 
@@ -173,7 +174,7 @@ static void test_pl_1bit_correlator(long T, long F, long Sds, long Nds, long rfi
 	}
     }
 
-    gputils::assert_arrays_equal(counts_cpu, counts_gpu, "cpu", "gpu", {"tout","f","tile","i","j"});
+    ksgpu::assert_arrays_equal(counts_cpu, counts_gpu, "cpu", "gpu", {"tout","f","tile","i","j"});
 }
 
 
@@ -184,7 +185,7 @@ static void test_pl_1bit_correlator()
 	long Sds = rand_int(0,2) ? 16 : 128;
 	
 	// v = (T/Nds, F, Nds/128)
-	vector<ssize_t> v = gputils::random_integers_with_bounded_product(3, 10*1000*1000/(Sds*Sds));
+	vector<ssize_t> v = ksgpu::random_integers_with_bounded_product(3, 10*1000*1000/(Sds*Sds));
 	long Nds = v[2] * 128;
 	long F = v[1];
 	long T = v[0] * Nds;

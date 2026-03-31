@@ -1,8 +1,9 @@
 #include "../include/n2k/pl_kernels.hpp"
-#include <gputils/CudaStreamPool.hpp>
+#include <iostream>
+#include <ksgpu/KernelTimer.hpp>
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 using namespace n2k;
 
 
@@ -16,19 +17,14 @@ static void time_pl_mask_expander(const string &name, long Tout, long Fout, long
     Array<ulong> pl_in({Tin/64,Fin,S}, af_gpu | af_zero);
     double gb = 8.0e-9 * ninner * (pl_out.size + pl_in.size);
 
-    // Warm up. (FIXME make this generic in gputils.)
-    launch_pl_mask_expander(pl_out, pl_in);
-    CUDA_CALL(cudaDeviceSynchronize());
-
-    auto callback = [&](const CudaStreamPool &pool, cudaStream_t stream, int istream)
-    {
-	for (long i = 0; i < ninner; i++)
-	    launch_pl_mask_expander(pl_out, pl_in, stream);  // calls CUDA_PEEK()
-    };
-
-    CudaStreamPool sp(callback, nouter, 1, name);
-    sp.monitor_throughput("Global memory BW (GB/s)", gb);
-    sp.run();
+    KernelTimer kt(nouter);
+    
+    while (kt.next()) {
+        for (long i = 0; i < ninner; i++)
+            launch_pl_mask_expander(pl_out, pl_in, kt.stream);  // calls CUDA_PEEK()
+        if (kt.warmed_up)
+            cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt) << endl;
+    }
 }
 
 
@@ -42,20 +38,15 @@ static void time_pl_1bit_correlator(const string &name, long T, long F, long S, 
     Array<uint> rfimask({F, T/32}, af_gpu | af_zero);
     Array<int> v({Tout,F,ntiles,8,8}, af_gpu | af_zero);
     double gb = 1.0e-9 * ninner * (8*pl.size + 4*v.size);
-
-    // Warm up. (FIXME make this generic in gputils.)
-    launch_pl_1bit_correlator(v, pl, rfimask, Nds);
-    CUDA_CALL(cudaDeviceSynchronize());
     
-    auto callback = [&](const CudaStreamPool &pool, cudaStream_t stream, int istream)
-    {
-	for (long i = 0; i < ninner; i++)
-	    launch_pl_1bit_correlator(v, pl, rfimask, Nds, stream);  // calls CUDA_PEEK()
-    };
-
-    CudaStreamPool sp(callback, nouter, 1, name);
-    sp.monitor_throughput("Global memory BW (GB/s)", gb);
-    sp.run();
+    KernelTimer kt(nouter);
+    
+    while (kt.next()) {
+        for (long i = 0; i < ninner; i++)
+            launch_pl_1bit_correlator(v, pl, rfimask, Nds, kt.stream);  // calls CUDA_PEEK()
+        if (kt.warmed_up)
+            cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt) << endl;
+    }
 }
 
 

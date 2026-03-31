@@ -1,12 +1,13 @@
 #include "../include/n2k/rfi_kernels.hpp"
 
+#include <cassert>
 #include <iostream>
-#include <gputils/cuda_utils.hpp>
-#include <gputils/string_utils.hpp>
+#include <ksgpu/cuda_utils.hpp>
+#include <ksgpu/string_utils.hpp>
 
 using namespace std;
 using namespace n2k;
-using namespace gputils;
+using namespace ksgpu;
 
 
 // FIXME move somewhere more general?
@@ -178,8 +179,8 @@ struct RunState
 	for (long t = 0; t < T; t++) {
 	    for (long f = 0; f < F; f++) {
 		for (long s = 0; s < S; s++) {
-		    int ex = quantize(rms * dist(gputils::default_rng));
-		    int ey = quantize(rms * dist(gputils::default_rng));
+		    int ex = quantize(rms * dist(ksgpu::default_rng));
+		    int ey = quantize(rms * dist(ksgpu::default_rng));
 		    int8_t e44 = ((ex & 0xf) | ((ey & 0xf) << 4)) ^ bits;
 		    E_cpu.data[t*F*S + f*S + s] = e44;
 		}
@@ -279,7 +280,7 @@ int main(int argc, char **argv)
     rs.T = rs.Nds1 * rs.Nds2 * 4;
     rs.F = 51;
     rs.S = 1024;
-    rs.rms = gputils::from_str<double> (argv[1]);
+    rs.rms = ksgpu::from_str<double> (argv[1]);
     rs.offset_encoded = true;
     rs.sk_params.sk_rfimask_sigmas = 1.5;
     rs.sk_params.single_feed_min_good_frac = 0.5;
