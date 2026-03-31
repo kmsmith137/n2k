@@ -55,9 +55,9 @@ struct template_magic
     // Default template reduces case (L > N) to case (L == N).
     static __device__ ulong load_and_sum(const ulong *Sin, uint bf, int m, int M, int S)
     {
-	constexpr uint bit = (L/2);
-	ulong x = template_magic<N,(L/2)>::load_and_sum(Sin, bf, m, M, S);
-	return x + __shfl_sync(FULL_MASK, x, threadIdx.x ^ bit);
+        constexpr uint bit = (L/2);
+        ulong x = template_magic<N,(L/2)>::load_and_sum(Sin, bf, m, M, S);
+        return x + __shfl_sync(FULL_MASK, x, threadIdx.x ^ bit);
     }
 };
 
@@ -67,13 +67,13 @@ struct template_magic<N,N>
     // This template reduces case (L == N > 1) to case (L == N == 1)
     static __device__ ulong load_and_sum(const ulong *Sin, uint bf, int m, int M, int S)
     {
-	constexpr uint bit = (N/2);
-	
-	ulong x = template_magic<(N/2),(N/2)>::load_and_sum(Sin, bf, m, M, S);
-	ulong y = template_magic<(N/2),(N/2)>::load_and_sum(Sin, bf, m+(N/2), M, S);
+        constexpr uint bit = (N/2);
+        
+        ulong x = template_magic<(N/2),(N/2)>::load_and_sum(Sin, bf, m, M, S);
+        ulong y = template_magic<(N/2),(N/2)>::load_and_sum(Sin, bf, m+(N/2), M, S);
         ulong src = (threadIdx.x & bit) ? x : y;
         ulong dst = (threadIdx.x & bit) ? y : x;
-	return dst + __shfl_sync(FULL_MASK, src, threadIdx.x ^ bit);
+        return dst + __shfl_sync(FULL_MASK, src, threadIdx.x ^ bit);
     }
 };
 
@@ -83,18 +83,18 @@ struct template_magic<1,1>
     // Base case: L == N == 1.
     static __device__ ulong load_and_sum(const ulong *Sin, uint bf, int m, int M, int S)
     {
-	m = (m < M) ? m : (M-1);
-	
-	uint b = bf;
-	ulong ret = 0;
-	
-	for (int s = threadIdx.x; s < S; s += blockDim.x) {
-	    ulong x = Sin[m*S + s];
-	    ret += ((b & 1) ? x : 0);   // don't sum bad feeds
-	    b >>= 1;
-	}
-	
-	return ret;
+        m = (m < M) ? m : (M-1);
+        
+        uint b = bf;
+        ulong ret = 0;
+        
+        for (int s = threadIdx.x; s < S; s += blockDim.x) {
+            ulong x = Sin[m*S + s];
+            ret += ((b & 1) ? x : 0);   // don't sum bad feeds
+            b >>= 1;
+        }
+        
+        return ret;
     }
 };
 
@@ -116,22 +116,22 @@ __global__ void s012_station_downsample_kernel(ulong *Sout, const ulong *Sin, co
     int m = 32*blockIdx.x + N*threadIdx.y;
     uint bf = load_bad_feed_mask(bf_mask, shmem_bf, S);
     ulong x = template_magic<N,32>::load_and_sum(Sin, bf, m, M, S);  // handles case m >= M
-	
+        
     if (laneId < N)
-	shmem_red[warpId*N + laneId] = x;
+        shmem_red[warpId*N + laneId] = x;
     
     __syncthreads();
     
     if (warpId != 0)
-	return;
+        return;
 
     x = 0;
     for (int i = laneId; i < blockDim.x; i += 32)
-	x += shmem_red[i];
+        x += shmem_red[i];
 
     m = 32*blockIdx.x + laneId;
     if (m < M)
-	Sout[m] = x;
+        Sout[m] = x;
 }
 
 
@@ -142,17 +142,17 @@ __global__ void s012_station_downsample_kernel(ulong *Sout, const ulong *Sin, co
 void launch_s012_station_downsample_kernel(ulong *Sout, const ulong *Sin, const uint8_t *bf_mask, long M, long S, cudaStream_t stream)
 {
     if (!Sout || !Sin || !bf_mask)
-	throw runtime_error("launch_s012_station_downsample_kernel(): pointer was NULL");
+        throw runtime_error("launch_s012_station_downsample_kernel(): pointer was NULL");
     if (M <= 0)
-	throw runtime_error("launch_s012_station_downsample_kernel(): expected M > 0");
+        throw runtime_error("launch_s012_station_downsample_kernel(): expected M > 0");
     if (S <= 0)
-	throw runtime_error("launch_s012_station_downsample_kernel(): expected S > 0");
+        throw runtime_error("launch_s012_station_downsample_kernel(): expected S > 0");
     if (S & 127)
-	throw runtime_error("launch_s012_station_downsample_kernel(): expected S to be a multple of 128");
+        throw runtime_error("launch_s012_station_downsample_kernel(): expected S to be a multple of 128");
     if (S > rfi_max_stations)
-	throw runtime_error("launch_s012_station_downsample_kernel(): expected S to be <= max_rfi_stations");
+        throw runtime_error("launch_s012_station_downsample_kernel(): expected S to be <= max_rfi_stations");
     if ((M*S) > INT_MAX)
-	throw runtime_error("launch_s012_station_downsample_kernel(): 32-bit overflow");
+        throw runtime_error("launch_s012_station_downsample_kernel(): 32-bit overflow");
 
     uint Wx = (S+1023) / 1024;
     int nblocks = (M+31) / 32;
@@ -160,14 +160,14 @@ void launch_s012_station_downsample_kernel(ulong *Sout, const ulong *Sin, const 
     shmem_nbytes += (8*32*Wx);  // 'shmem_red' array has shape (Wx,Wy,32/Wy) and dtype ulong
 
     if (Wx == 1)       // use Wy=4
-	s012_station_downsample_kernel<4> <<< nblocks, {32*Wx,4}, shmem_nbytes, stream >>> 
-	    (Sout, Sin, (const uint *) bf_mask, M, S);
+        s012_station_downsample_kernel<4> <<< nblocks, {32*Wx,4}, shmem_nbytes, stream >>> 
+            (Sout, Sin, (const uint *) bf_mask, M, S);
     else if (Wx <= 3)  // use Wy=2
-	s012_station_downsample_kernel<2> <<< nblocks, {32*Wx,2}, shmem_nbytes, stream >>> 
-	    (Sout, Sin, (const uint *) bf_mask, M, S);
+        s012_station_downsample_kernel<2> <<< nblocks, {32*Wx,2}, shmem_nbytes, stream >>> 
+            (Sout, Sin, (const uint *) bf_mask, M, S);
     else               // use Wy=1
-	s012_station_downsample_kernel<1> <<< nblocks, {32*Wx,1}, shmem_nbytes, stream >>> 
-	    (Sout, Sin, (const uint *) bf_mask, M, S);
+        s012_station_downsample_kernel<1> <<< nblocks, {32*Wx,1}, shmem_nbytes, stream >>> 
+            (Sout, Sin, (const uint *) bf_mask, M, S);
 
     CUDA_PEEK("launch s012_station_downsample");
 }
@@ -184,15 +184,15 @@ void launch_s012_station_downsample_kernel(Array<ulong> &Sout, const Array<ulong
     check_array(bf_mask, "launch_s012_station_downsample_kernel", "bf_mask", 1, true);    // ndim=1, contiguous=true
 
     if (Sin.shape[0] != Sout.shape[0])
-	throw runtime_error("launch_s012_station_downsample_kernel(): inconsistent number of time samples in input/output S012 arrays");
+        throw runtime_error("launch_s012_station_downsample_kernel(): inconsistent number of time samples in input/output S012 arrays");
     if (Sin.shape[1] != Sout.shape[1])
-	throw runtime_error("launch_s012_station_downsample_kernel(): inconsistent number of frequency channels in input/output S012 arrays");
+        throw runtime_error("launch_s012_station_downsample_kernel(): inconsistent number of frequency channels in input/output S012 arrays");
     if (Sout.shape[2] != 3)
-	throw runtime_error("launch_s012_station_downsample_kernel(): expected Sout.shape[2] == 3");
+        throw runtime_error("launch_s012_station_downsample_kernel(): expected Sout.shape[2] == 3");
     if (Sin.shape[2] != 3)
-	throw runtime_error("launch_s012_station_downsample_kernel(): expected Sin.shape[2] == 3");
+        throw runtime_error("launch_s012_station_downsample_kernel(): expected Sin.shape[2] == 3");
     if (Sin.shape[3] != bf_mask.shape[0])
-	throw runtime_error("launch_s012_station_downsample_kernel(): inconsistent number of stations in S012 arrays and bad feed mask");
+        throw runtime_error("launch_s012_station_downsample_kernel(): inconsistent number of stations in S012 arrays and bad feed mask");
 
     long M = 3 * Sin.shape[0] * Sin.shape[1];
     long S = Sin.shape[3];

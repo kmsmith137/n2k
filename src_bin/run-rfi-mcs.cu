@@ -28,27 +28,27 @@ struct SkTracker
     
     void update(float sk, float sigma)
     {
-	if (sigma > 0) {
-	    double x = (sk-1.0);
-	    n += 1.0;
-	    sum_x += x;
-	    sum_x2 += x*x;
-	    predicted_sum_x2 += sigma*sigma;
-	}
+        if (sigma > 0) {
+            double x = (sk-1.0);
+            n += 1.0;
+            sum_x += x;
+            sum_x2 += x*x;
+            predicted_sum_x2 += sigma*sigma;
+        }
     }
 
     void show(const string &name)
     {
-	if (n < 0.5) {
-	    cout << name << ": no valid sk-samples" << endl;
-	    return;
-	}
-	
-	cout << "    " << name
-	     << ": <SK-1> = " << (sum_x / n)
-	     << " (single sk-array element bias is " << (sum_x / sqrt(sum_x2*n)) << " sigma,"
-	     << " cumulative bias across all MCs is " << (sum_x / sqrt(predicted_sum_x2)) << " sigma)."
-	     << " Ratio (rms/rms_predicted) = " << sqrt(sum_x2 / predicted_sum_x2) << endl;
+        if (n < 0.5) {
+            cout << name << ": no valid sk-samples" << endl;
+            return;
+        }
+        
+        cout << "    " << name
+             << ": <SK-1> = " << (sum_x / n)
+             << " (single sk-array element bias is " << (sum_x / sqrt(sum_x2*n)) << " sigma,"
+             << " cumulative bias across all MCs is " << (sum_x / sqrt(predicted_sum_x2)) << " sigma)."
+             << " Ratio (rms/rms_predicted) = " << sqrt(sum_x2 / predicted_sum_x2) << endl;
     }
 };
 
@@ -115,153 +115,153 @@ struct RunState
     
     void init(bool print_params = true)
     {
-	if (print_params) {
-	    cout << "Name: "<< name << "\n"
-		 << "    T = " << left << setw(44) << T << "// Number of baseband time samples per frame\n"
-		 << "    F = " << left << setw(44) << F << "// Number of freq channels\n"
-		 << "    S = " << left << setw(44) << S << "// Number of stations\n"
-		 << "    Nds1 = " << left << setw(41) << Nds1 << "// Downsampling factor baseband -> 1 ms\n"
-		 << "    Nds2 = " << left << setw(41) << Nds2 << "// Downsampling factor 1 ms -> 30 ms\n"
-		 << "    rms = " << left << setw(42) << rms << "// RMS of E-field\n"
-		 << "    offset_encoded = " << left << setw(31) << offset_encoded << "// Boolean\n"
-		 << "    sk_params.sk_rfimask_sigmas = " << left << setw(18) << sk_params.sk_rfimask_sigmas
-		 << "// RFI masking threshold in \"sigmas\"\n"
-		 << "    sk_params.single_feed_min_good_frac = " << left << setw(10) << sk_params.single_feed_min_good_frac
-		 << "// For single-feed SK-statistic (threshold for validity)\n"
-		 << "    sk_params.feed_averaged_min_good_frac = " << left << setw(8) << sk_params.feed_averaged_min_good_frac
-		 << "// For feed-averaged SK-statistic (threshold for validity)\n"
-		 << "    sk_params.mu_min = " << left << setw(29) << sk_params.mu_min
-		 << "// For single-feed SK-statistic (threshold for validity)\n"
-		 << "    sk_params.mu_max = " << left << setw(29) << sk_params.mu_max
-		 << "// For single-feed SK-statistic (threshold for validity)"
-		 << endl;
-	}
-	    
-	// sk_kernel1
-	this->sk_params.Nds = Nds1;
-	this->sk_kernel1 = make_shared<SkKernel> (sk_params);
+        if (print_params) {
+            cout << "Name: "<< name << "\n"
+                 << "    T = " << left << setw(44) << T << "// Number of baseband time samples per frame\n"
+                 << "    F = " << left << setw(44) << F << "// Number of freq channels\n"
+                 << "    S = " << left << setw(44) << S << "// Number of stations\n"
+                 << "    Nds1 = " << left << setw(41) << Nds1 << "// Downsampling factor baseband -> 1 ms\n"
+                 << "    Nds2 = " << left << setw(41) << Nds2 << "// Downsampling factor 1 ms -> 30 ms\n"
+                 << "    rms = " << left << setw(42) << rms << "// RMS of E-field\n"
+                 << "    offset_encoded = " << left << setw(31) << offset_encoded << "// Boolean\n"
+                 << "    sk_params.sk_rfimask_sigmas = " << left << setw(18) << sk_params.sk_rfimask_sigmas
+                 << "// RFI masking threshold in \"sigmas\"\n"
+                 << "    sk_params.single_feed_min_good_frac = " << left << setw(10) << sk_params.single_feed_min_good_frac
+                 << "// For single-feed SK-statistic (threshold for validity)\n"
+                 << "    sk_params.feed_averaged_min_good_frac = " << left << setw(8) << sk_params.feed_averaged_min_good_frac
+                 << "// For feed-averaged SK-statistic (threshold for validity)\n"
+                 << "    sk_params.mu_min = " << left << setw(29) << sk_params.mu_min
+                 << "// For single-feed SK-statistic (threshold for validity)\n"
+                 << "    sk_params.mu_max = " << left << setw(29) << sk_params.mu_max
+                 << "// For single-feed SK-statistic (threshold for validity)"
+                 << endl;
+        }
+            
+        // sk_kernel1
+        this->sk_params.Nds = Nds1;
+        this->sk_kernel1 = make_shared<SkKernel> (sk_params);
 
-	// sk_kernel2
-	this->sk_params.Nds = Nds1 * Nds2;
-	this->sk_kernel2 = make_shared<SkKernel> (sk_params);
+        // sk_kernel2
+        this->sk_params.Nds = Nds1 * Nds2;
+        this->sk_kernel2 = make_shared<SkKernel> (sk_params);
 
-	// GPU arrays.
-	this->E = Array<uint8_t> ({T,F,S}, af_gpu);
-	this->bf_mask = Array<uint8_t> ({S}, af_gpu);
-	this->pl_mask = Array<ulong> ({T/128,(F+3)/4,S/8}, af_gpu);
-	this->S012_fast = Array<ulong> ({T/Nds1,F,3,S}, af_gpu);
-	this->S012_slow = Array<ulong> ({T/(Nds1*Nds2),F,3,S}, af_gpu);
-	this->rfimask = Array<uint> ({F,T/32}, af_gpu);
-	this->sk_feed_averaged_fast = Array<float> ({T/Nds1,F,3}, af_gpu);
-	this->sk_feed_averaged_slow = Array<float> ({T/(Nds1*Nds2),F,3}, af_gpu);
-	this->sk_single_feed_slow = Array<float> ({T/(Nds1*Nds2),F,3,S}, af_gpu);
+        // GPU arrays.
+        this->E = Array<uint8_t> ({T,F,S}, af_gpu);
+        this->bf_mask = Array<uint8_t> ({S}, af_gpu);
+        this->pl_mask = Array<ulong> ({T/128,(F+3)/4,S/8}, af_gpu);
+        this->S012_fast = Array<ulong> ({T/Nds1,F,3,S}, af_gpu);
+        this->S012_slow = Array<ulong> ({T/(Nds1*Nds2),F,3,S}, af_gpu);
+        this->rfimask = Array<uint> ({F,T/32}, af_gpu);
+        this->sk_feed_averaged_fast = Array<float> ({T/Nds1,F,3}, af_gpu);
+        this->sk_feed_averaged_slow = Array<float> ({T/(Nds1*Nds2),F,3}, af_gpu);
+        this->sk_single_feed_slow = Array<float> ({T/(Nds1*Nds2),F,3,S}, af_gpu);
 
-	// CPU arrays.
-	this->E_cpu = Array<uint8_t> ({T,F,S}, af_rhost);
-	this->bf_mask_cpu = Array<uint8_t> ({S}, af_rhost);
-	this->pl_mask_cpu = Array<ulong> ({T/128,(F+3)/4,S/8}, af_rhost);
-	this->rfimask_cpu = Array<uint> ({F,T/32}, af_rhost);
-	this->sk_feed_averaged_fast_cpu = Array<float> ({T/Nds1,F,3}, af_rhost);
-	this->sk_feed_averaged_slow_cpu = Array<float> ({T/(Nds1*Nds2),F,3}, af_rhost);
-	this->sk_single_feed_slow_cpu = Array<float> ({T/(Nds1*Nds2),F,3,S}, af_rhost);
+        // CPU arrays.
+        this->E_cpu = Array<uint8_t> ({T,F,S}, af_rhost);
+        this->bf_mask_cpu = Array<uint8_t> ({S}, af_rhost);
+        this->pl_mask_cpu = Array<ulong> ({T/128,(F+3)/4,S/8}, af_rhost);
+        this->rfimask_cpu = Array<uint> ({F,T/32}, af_rhost);
+        this->sk_feed_averaged_fast_cpu = Array<float> ({T/Nds1,F,3}, af_rhost);
+        this->sk_feed_averaged_slow_cpu = Array<float> ({T/(Nds1*Nds2),F,3}, af_rhost);
+        this->sk_single_feed_slow_cpu = Array<float> ({T/(Nds1*Nds2),F,3,S}, af_rhost);
     }
 
     
     void run_frame()
     {
-	// No masks for now (might put these in later but I don't think it's a high priority)
-	memset(bf_mask_cpu.data, 0xff, bf_mask_cpu.size);
-	memset(pl_mask_cpu.data, 0xff, pl_mask_cpu.size * sizeof(ulong));
-	
-	int8_t bits = offset_encoded ? 0x88 : 0;
-	std::normal_distribution<double> dist(0, 1.0);
+        // No masks for now (might put these in later but I don't think it's a high priority)
+        memset(bf_mask_cpu.data, 0xff, bf_mask_cpu.size);
+        memset(pl_mask_cpu.data, 0xff, pl_mask_cpu.size * sizeof(ulong));
+        
+        int8_t bits = offset_encoded ? 0x88 : 0;
+        std::normal_distribution<double> dist(0, 1.0);
 
-	for (long t = 0; t < T; t++) {
-	    for (long f = 0; f < F; f++) {
-		for (long s = 0; s < S; s++) {
-		    int ex = quantize(rms * dist(ksgpu::default_rng));
-		    int ey = quantize(rms * dist(ksgpu::default_rng));
-		    int8_t e44 = ((ex & 0xf) | ((ey & 0xf) << 4)) ^ bits;
-		    E_cpu.data[t*F*S + f*S + s] = e44;
-		}
-	    }
-	}
+        for (long t = 0; t < T; t++) {
+            for (long f = 0; f < F; f++) {
+                for (long s = 0; s < S; s++) {
+                    int ex = quantize(rms * dist(ksgpu::default_rng));
+                    int ey = quantize(rms * dist(ksgpu::default_rng));
+                    int8_t e44 = ((ex & 0xf) | ((ey & 0xf) << 4)) ^ bits;
+                    E_cpu.data[t*F*S + f*S + s] = e44;
+                }
+            }
+        }
 
-	// Copy CPU -> GPU.
-	E.fill(E_cpu);
-	bf_mask.fill(bf_mask_cpu);
-	pl_mask.fill(pl_mask_cpu);
+        // Copy CPU -> GPU.
+        E.fill(E_cpu);
+        bf_mask.fill(bf_mask_cpu);
+        pl_mask.fill(pl_mask_cpu);
 
-	// Launch kernels.
-	
-	Array<ulong> S0 = S012_fast.slice(2,0);
-	Array<ulong> S12 = S012_fast.slice(2,1,3);
-	Array<float> empty_sk_single_feed;
-	Array<uint> empty_rfimask;
+        // Launch kernels.
+        
+        Array<ulong> S0 = S012_fast.slice(2,0);
+        Array<ulong> S12 = S012_fast.slice(2,1,3);
+        Array<float> empty_sk_single_feed;
+        Array<uint> empty_rfimask;
 
-	launch_s0_kernel(S0, pl_mask, Nds1);
-	launch_s12_kernel(S12, E, Nds1, offset_encoded);
-	launch_s012_time_downsample_kernel(S012_slow, S012_fast, Nds2);
-	sk_kernel1->launch(sk_feed_averaged_fast, empty_sk_single_feed, rfimask, S012_fast, bf_mask);
-	sk_kernel2->launch(sk_feed_averaged_slow, sk_single_feed_slow, empty_rfimask, S012_slow, bf_mask);
-	CUDA_CALL(cudaDeviceSynchronize());
+        launch_s0_kernel(S0, pl_mask, Nds1);
+        launch_s12_kernel(S12, E, Nds1, offset_encoded);
+        launch_s012_time_downsample_kernel(S012_slow, S012_fast, Nds2);
+        sk_kernel1->launch(sk_feed_averaged_fast, empty_sk_single_feed, rfimask, S012_fast, bf_mask);
+        sk_kernel2->launch(sk_feed_averaged_slow, sk_single_feed_slow, empty_rfimask, S012_slow, bf_mask);
+        CUDA_CALL(cudaDeviceSynchronize());
     
-	// Copy GPU -> CPU.
-	rfimask_cpu.fill(rfimask);
-	sk_feed_averaged_fast_cpu.fill(sk_feed_averaged_fast);
-	sk_feed_averaged_slow_cpu.fill(sk_feed_averaged_slow);
-	sk_single_feed_slow_cpu.fill(sk_single_feed_slow);
+        // Copy GPU -> CPU.
+        rfimask_cpu.fill(rfimask);
+        sk_feed_averaged_fast_cpu.fill(sk_feed_averaged_fast);
+        sk_feed_averaged_slow_cpu.fill(sk_feed_averaged_slow);
+        sk_single_feed_slow_cpu.fill(sk_single_feed_slow);
 
-	// Update SKTrackers
-	
-	for (long t = 0; t < T/Nds1; t++) {
-	    for (long f = 0; f < F; f++) {
-		float sk = sk_feed_averaged_fast_cpu.data[t*(3*F) + 3*f];
-		float sigma = sk_feed_averaged_fast_cpu.data[t*(3*F) + 3*f + 2];
-		sk_feed_averaged_fast_tracker.update(sk, sigma);
-	    }
-	}
+        // Update SKTrackers
+        
+        for (long t = 0; t < T/Nds1; t++) {
+            for (long f = 0; f < F; f++) {
+                float sk = sk_feed_averaged_fast_cpu.data[t*(3*F) + 3*f];
+                float sigma = sk_feed_averaged_fast_cpu.data[t*(3*F) + 3*f + 2];
+                sk_feed_averaged_fast_tracker.update(sk, sigma);
+            }
+        }
 
-	for (long t = 0; t < T/(Nds1*Nds2); t++) {
-	    for (long f = 0; f < F; f++) {
-		float sk = sk_feed_averaged_slow_cpu.data[t*(3*F) + 3*f];
-		float sigma = sk_feed_averaged_slow_cpu.data[t*(3*F) + 3*f + 2];
-		sk_feed_averaged_slow_tracker.update(sk, sigma);
+        for (long t = 0; t < T/(Nds1*Nds2); t++) {
+            for (long f = 0; f < F; f++) {
+                float sk = sk_feed_averaged_slow_cpu.data[t*(3*F) + 3*f];
+                float sigma = sk_feed_averaged_slow_cpu.data[t*(3*F) + 3*f + 2];
+                sk_feed_averaged_slow_tracker.update(sk, sigma);
 
-		for (long s = 0; s < S; s++) {
-		    sk = sk_single_feed_slow_cpu.data[t*(3*F*S) + f*(3*S) + s];
-		    sigma = sk_single_feed_slow_cpu.data[t*(3*F*S) + f*(3*S) + 2*S + s];
-		    sk_single_feed_slow_tracker.update(sk, sigma);
-		}
-	    }
-	}
+                for (long s = 0; s < S; s++) {
+                    sk = sk_single_feed_slow_cpu.data[t*(3*F*S) + f*(3*S) + s];
+                    sigma = sk_single_feed_slow_cpu.data[t*(3*F*S) + f*(3*S) + 2*S + s];
+                    sk_single_feed_slow_tracker.update(sk, sigma);
+                }
+            }
+        }
 
-	// Update RFI mask fraction tracking.
-	
-	for (long f = 0; f < F; f++) {
-	    for (long t32 = 0; t32 < T/32; t32++) {
-		uint m = rfimask_cpu.data[f*(T/32) + t32];
-		assert((m == 0) || (m == 0xffffffffU));
-		rfimask_num += (m ? 1.0 : 0.0);
-		rfimask_den += 1.0;
-	    }
-	}
+        // Update RFI mask fraction tracking.
+        
+        for (long f = 0; f < F; f++) {
+            for (long t32 = 0; t32 < T/32; t32++) {
+                uint m = rfimask_cpu.data[f*(T/32) + t32];
+                assert((m == 0) || (m == 0xffffffffU));
+                rfimask_num += (m ? 1.0 : 0.0);
+                rfimask_den += 1.0;
+            }
+        }
 
-	this->nframes++;
+        this->nframes++;
     }
 
 
     void show_statistics()
     {
-	cout << name << ": nframes=" << nframes << endl;
-	sk_feed_averaged_fast_tracker.show("Feed-averaged fast SK");
-	sk_feed_averaged_slow_tracker.show("Feed-averaged slow SK");
-	sk_single_feed_slow_tracker.show("Single-feed slow SK");
+        cout << name << ": nframes=" << nframes << endl;
+        sk_feed_averaged_fast_tracker.show("Feed-averaged fast SK");
+        sk_feed_averaged_slow_tracker.show("Feed-averaged slow SK");
+        sk_single_feed_slow_tracker.show("Single-feed slow SK");
 
-	if (rfimask_den > 0.0)
-	    cout << "    RFI mask fraction = " << (rfimask_num / rfimask_den)
-		 << " (this is the 'good' fraction, not the 'bad' fraction)"
-		 << endl;
+        if (rfimask_den > 0.0)
+            cout << "    RFI mask fraction = " << (rfimask_num / rfimask_den)
+                 << " (this is the 'good' fraction, not the 'bad' fraction)"
+                 << endl;
     }
 };
 
@@ -270,8 +270,8 @@ struct RunState
 int main(int argc, char **argv)
 {
     if (argc != 2) {
-	cerr << "Usage: test-sk-bias <rms>" << endl;
-	return 2;
+        cerr << "Usage: test-sk-bias <rms>" << endl;
+        return 2;
     }
 
     RunState rs;
@@ -295,12 +295,12 @@ int main(int argc, char **argv)
     rs.init();
     
     cout << "Starting Monte Carlos.\n"
-	 << "This program chains all the GPU kernels together, to test whether bias/sigma/maskfrac are as expected.\n"
-	 << "Warning: slow! (Simulating E-array on CPU is the bottleneck).\n"
-	 << "You may want to leave this running in the background, and check on it later." << endl;
+         << "This program chains all the GPU kernels together, to test whether bias/sigma/maskfrac are as expected.\n"
+         << "Warning: slow! (Simulating E-array on CPU is the bottleneck).\n"
+         << "You may want to leave this running in the background, and check on it later." << endl;
 
     for (;;) {
-	rs.run_frame();
-	rs.show_statistics();
+        rs.run_frame();
+        rs.show_statistics();
     }
 }

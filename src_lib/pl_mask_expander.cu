@@ -27,13 +27,13 @@ __device__ inline uint2 double_bits(uint x)
     uint2 ret{0U,0U};
 
     for (uint i = 0; i < 16; i++) {
-	uint x_shifted = x >> i;
-	uint bit_pair = 3U << (2*i);
-	
-	if (x_shifted & 1U)
-	    ret.x |= bit_pair;
-	if (x_shifted & 0x10000U)
-	    ret.y |= bit_pair;
+        uint x_shifted = x >> i;
+        uint bit_pair = 3U << (2*i);
+        
+        if (x_shifted & 1U)
+            ret.x |= bit_pair;
+        if (x_shifted & 0x10000U)
+            ret.y |= bit_pair;
     }
 
     return ret;
@@ -81,41 +81,41 @@ __global__ void pl_mask_expand_kernel(uint *pl_out, const uint *pl_in, int F, in
     // Read input mask.
     uint x = *pl_in;
     uint2 y = double_bits(x);
-	
+        
     // Write (expanded) output mask.
     for (long i = 0; i < nf_out; i++)
-	*((uint2 *) (pl_out + i*N)) = y;
+        *((uint2 *) (pl_out + i*N)) = y;
 }
 
 
 void launch_pl_mask_expander(ulong *pl_out, const ulong *pl_in, long Tout, long Fout, long Sds, cudaStream_t stream)
 {
     if (!pl_out)
-	throw runtime_error("launch_pl_mask_expander: 'pl_out' must be non-NULL");
+        throw runtime_error("launch_pl_mask_expander: 'pl_out' must be non-NULL");
     if (!pl_in)
-	throw runtime_error("launch_pl_mask_expander: 'pl_in' must be non-NULL");
+        throw runtime_error("launch_pl_mask_expander: 'pl_in' must be non-NULL");
     if (Tout <= 0)
-	throw runtime_error("launch_pl_mask_expander: expected Tout > 0");
+        throw runtime_error("launch_pl_mask_expander: expected Tout > 0");
     if (Fout <= 0)
-	throw runtime_error("launch_pl_mask_expander: expected Fout > 0");
+        throw runtime_error("launch_pl_mask_expander: expected Fout > 0");
     if (Sds <= 0)
-	throw runtime_error("launch_pl_mask_expander: expected Sds > 0");
+        throw runtime_error("launch_pl_mask_expander: expected Sds > 0");
     if (Tout & 127)
-	throw runtime_error("launch_pl_mask_expander: expected Tout to be a multiple of 128");
+        throw runtime_error("launch_pl_mask_expander: expected Tout to be a multiple of 128");
     if (Sds & 15)
-	throw runtime_error("launch_pl_mask_expander: expected Sds to be a multiple of 16");
+        throw runtime_error("launch_pl_mask_expander: expected Sds to be a multiple of 16");
 
     long M = Tout / 128;
     long N = Sds * 2;
     
     if ((N > INT_MAX) || (Fout > INT_MAX) || (M > INT_MAX))
-	throw runtime_error("launch_pl_mask_expander: 32-bit overflow");
+        throw runtime_error("launch_pl_mask_expander: 32-bit overflow");
     
     dim3 nblocks, nthreads;
     ksgpu::assign_kernel_dims(nblocks, nthreads, N, Fout, M);  // x <-> n, y <-> f, z <-> m
 
     pl_mask_expand_kernel <<< nblocks, nthreads, 0, stream >>>
-	((uint *) pl_out, (const uint *) pl_in, Fout, M, N);
+        ((uint *) pl_out, (const uint *) pl_in, Fout, M, N);
 
     CUDA_PEEK("pl_mask_expand_kernel");
 }
@@ -131,13 +131,13 @@ void launch_pl_mask_expander(Array<ulong> &pl_out, const Array<ulong> &pl_in, cu
     long Sds = pl_out.shape[2];
 
     if (!pl_in.shape_equals({Tout/128, (Fout+3)/4, Sds})) {
-	stringstream ss;
-	ss << "launch_pl_mask_expander: pl_out.shape=" << pl_out.shape_str()
-	   << " and pl_in.shape=" << pl_in.shape_str()
-	   << " are inconsistent (expected pl_in.shape=("
-	   << (Tout/128) << "," << ((Fout+3)/4) << "," << Sds 
-	   << "))";
-	throw runtime_error(ss.str());
+        stringstream ss;
+        ss << "launch_pl_mask_expander: pl_out.shape=" << pl_out.shape_str()
+           << " and pl_in.shape=" << pl_in.shape_str()
+           << " are inconsistent (expected pl_in.shape=("
+           << (Tout/128) << "," << ((Fout+3)/4) << "," << Sds 
+           << "))";
+        throw runtime_error(ss.str());
     }
 
     launch_pl_mask_expander(pl_out.data, pl_in.data, Tout, Fout, Sds, stream);

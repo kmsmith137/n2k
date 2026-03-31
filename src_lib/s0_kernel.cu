@@ -121,11 +121,11 @@ __global__ void s0_kernel(ulong4_32a *s0, const uint *pl, int T, int F, int S, i
     // These tests guarante that we don't write past the edge of memory.
     
     if (tds*Nds >= T)
-	return;
+        return;
     if (4*fds >= F)
-	return;
+        return;
     if (8*sds >= S)
-	return;
+        return;
 
     // Shift input pointer. Note that no time shift is not applied, but laneId is applied.
     // Before the shifts, 'pl' has shape uint[T/128, Fds, S/8, 2].
@@ -156,10 +156,10 @@ __global__ void s0_kernel(ulong4_32a *s0, const uint *pl, int T, int F, int S, i
     uint s0_accum = 0;
     
     for (int t128 = t128_lo; t128 < t128_hi; t128++) {
-	uint x = pl[t128 * pl_stride];
-	int t2 = (t128 << 6) + ((threadIdx.x & 1) << 5);
-	uint mask = _cmask(t2_hi - t2) - _cmask(t2_lo - t2);
-	s0_accum += __popc(x & mask);
+        uint x = pl[t128 * pl_stride];
+        int t2 = (t128 << 6) + ((threadIdx.x & 1) << 5);
+        uint mask = _cmask(t2_hi - t2) - _cmask(t2_lo - t2);
+        s0_accum += __popc(x & mask);
     }
 
     s0_accum <<= 1;
@@ -172,7 +172,7 @@ __global__ void s0_kernel(ulong4_32a *s0, const uint *pl, int T, int F, int S, i
     s0_x4.w = s0_accum;    
 
     for (int f = 0; f < nf; f++)
-	s0[f * out_fstride4] = s0_x4;
+        s0[f * out_fstride4] = s0_x4;
 }
 
 
@@ -229,7 +229,7 @@ void launch_s0_kernel(ulong *s0, const ulong *pl_mask, long T, long F, long S, l
     if (Nds & 1)
         throw runtime_error("launch_s0_kernel: downsampling factor 'Nds' must be even");
     if (out_fstride < S)
-        throw runtime_error("launch_s0_kernel(): out_fstride must be >= S");	
+        throw runtime_error("launch_s0_kernel(): out_fstride must be >= S");    
     if (out_fstride & 3)
         throw runtime_error("launch_s0_kernel(): out_fstride must be a multiple of 4");
     if ((T >= INT_MAX) || (F >= INT_MAX) || (S >= INT_MAX) || (Nds >= INT_MAX) || (out_fstride >= INT_MAX))
@@ -238,7 +238,7 @@ void launch_s0_kernel(ulong *s0, const ulong *pl_mask, long T, long F, long S, l
     long Tds = T / Nds;
     
     if (T != (Tds * Nds))
-	throw runtime_error("launch_s0_kernel: number of time samples T must be a multiple of downsampling factor 'Nds'");
+        throw runtime_error("launch_s0_kernel: number of time samples T must be a multiple of downsampling factor 'Nds'");
 
     dim3 nblocks, nthreads;
     ksgpu::assign_kernel_dims(nblocks, nthreads, S >> 2, (F+3) >> 2, Tds);
@@ -273,12 +273,12 @@ void launch_s0_kernel(Array<ulong> &s0, const Array<ulong> &pl_mask, long Nds, c
     long Sds = pl_mask.shape[2];
 
     if ((Tds*Nds != T128*128) || (Fds != ((F+3)/4)) || (S != (Sds*8)))
-	throw runtime_error("launch_s0_kernel(): s0.shape=" + s0.shape_str() + " and pl_mask.shape=" + pl_mask.shape_str() + " are inconsistent");
+        throw runtime_error("launch_s0_kernel(): s0.shape=" + s0.shape_str() + " and pl_mask.shape=" + pl_mask.shape_str() + " are inconsistent");
 
     if (s0.strides[2] != 1)
-	throw runtime_error("launch_s0_kernel(): expected innermost (station) axis of S0 to be contiguous");
+        throw runtime_error("launch_s0_kernel(): expected innermost (station) axis of S0 to be contiguous");
     if (s0.strides[0] != F*out_fstride)
-	throw runtime_error("launch_s0_kernel(): expected time+freq axes of S0 to be contiguous");
+        throw runtime_error("launch_s0_kernel(): expected time+freq axes of S0 to be contiguous");
 
     launch_s0_kernel(s0.data, pl_mask.data, 128*T128, F, S, Nds, out_fstride, stream);
 }

@@ -36,27 +36,27 @@ Correlator::kernel_t get_kernel(int nstations, int nfreq)
     assert(nstations > 0);
 
     if (nstations % CorrelatorParams::ns_divisor)
-	throw runtime_error("n2k::Correlator::get_kernel(): expected nstations(=" + to_str(nstations) + ") to be a multiple of " + to_str(CorrelatorParams::ns_divisor));
+        throw runtime_error("n2k::Correlator::get_kernel(): expected nstations(=" + to_str(nstations) + ") to be a multiple of " + to_str(CorrelatorParams::ns_divisor));
     
     unique_lock<mutex> ul(kernel_table_lock);
 
     for (const auto &e: kernel_table) {
-	if ((e.nstations != nstations) || (e.nfreq != nfreq))
-	    continue;
+        if ((e.nstations != nstations) || (e.nfreq != nfreq))
+            continue;
     
-	// Reference for cudaFuncSetAttribute()
-	// https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1g422642bfa0c035a590e4c43ff7c11f8d
+        // Reference for cudaFuncSetAttribute()
+        // https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1g422642bfa0c035a590e4c43ff7c11f8d
     
-	if (!e.shmem_attr_set) {
-	    CUDA_CALL(cudaFuncSetAttribute(
-	        e.kernel, 
-		cudaFuncAttributeMaxDynamicSharedMemorySize,
-		CorrelatorParams::shmem_nbytes
-	    ));
-	    e.shmem_attr_set = true;
-	}
+        if (!e.shmem_attr_set) {
+            CUDA_CALL(cudaFuncSetAttribute(
+                e.kernel, 
+                cudaFuncAttributeMaxDynamicSharedMemorySize,
+                CorrelatorParams::shmem_nbytes
+            ));
+            e.shmem_attr_set = true;
+        }
 
-	return e.kernel;
+        return e.kernel;
     }
     
     stringstream ss;
@@ -86,7 +86,7 @@ vector<pair<int,int>> get_all_kernel_params()
     unique_lock<mutex> ul(kernel_table_lock);
     
     for (const auto &k: kernel_table)
-	ret.push_back({k.nstations, k.nfreq});
+        ret.push_back({k.nstations, k.nfreq});
 
     return ret;
 }

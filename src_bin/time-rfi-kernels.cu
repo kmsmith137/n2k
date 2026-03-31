@@ -41,11 +41,11 @@ static void time_s0_kernel(const TimingParams &tp)
 
     KernelTimer kt(nouter);
     while (kt.next()) {
-	for (int i = 0; i < ninner; i++)
-	    launch_s0_kernel(S0, pl_mask, Nds, kt.stream);  // calls CUDA_PEEK()
-	if (kt.warmed_up)
-	    cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt)
-		 << ", Real-time fraction = " << (kt.dt / rt) << endl;
+        for (int i = 0; i < ninner; i++)
+            launch_s0_kernel(S0, pl_mask, Nds, kt.stream);  // calls CUDA_PEEK()
+        if (kt.warmed_up)
+            cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt)
+                 << ", Real-time fraction = " << (kt.dt / rt) << endl;
     }
 }
 
@@ -71,11 +71,11 @@ static void time_s12_kernel(const TimingParams &tp)
 
     KernelTimer kt(nouter);
     while (kt.next()) {
-	for (int i = 0; i < ninner; i++)
-	    launch_s12_kernel(S12, E, Nds, offset_encoded, kt.stream);  // calls CUDA_PEEK()
-	if (kt.warmed_up)
-	    cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt)
-		 << ", Real-time fraction = " << (kt.dt / rt) << endl;
+        for (int i = 0; i < ninner; i++)
+            launch_s12_kernel(S12, E, Nds, offset_encoded, kt.stream);  // calls CUDA_PEEK()
+        if (kt.warmed_up)
+            cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt)
+                 << ", Real-time fraction = " << (kt.dt / rt) << endl;
     }
 }
 
@@ -100,11 +100,11 @@ static void time_s012_time_downsample(const TimingParams &tp)
 
     KernelTimer kt(nouter);
     while (kt.next()) {
-	for (int i = 0; i < ninner; i++)
-	    launch_s012_time_downsample_kernel(Sout, Sin, Nds, kt.stream);  // calls CUDA_PEEK()
-	if (kt.warmed_up)
-	    cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt)
-		 << ", Real-time fraction = " << (kt.dt / rt) << endl;
+        for (int i = 0; i < ninner; i++)
+            launch_s012_time_downsample_kernel(Sout, Sin, Nds, kt.stream);  // calls CUDA_PEEK()
+        if (kt.warmed_up)
+            cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt)
+                 << ", Real-time fraction = " << (kt.dt / rt) << endl;
     }
 }
 
@@ -129,11 +129,11 @@ static void time_s012_station_downsample(const TimingParams &tp)
 
     KernelTimer kt(nouter);
     while (kt.next()) {
-	for (int i = 0; i < ninner; i++)
-	    launch_s012_station_downsample_kernel(Sout, Sin, bf_mask, kt.stream);  // calls CUDA_PEEK()
-	if (kt.warmed_up)
-	    cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt)
-		 << ", Real-time fraction = " << (kt.dt / rt) << endl;
+        for (int i = 0; i < ninner; i++)
+            launch_s012_station_downsample_kernel(Sout, Sin, bf_mask, kt.stream);  // calls CUDA_PEEK()
+        if (kt.warmed_up)
+            cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt)
+                 << ", Real-time fraction = " << (kt.dt / rt) << endl;
     }
 }
 
@@ -165,9 +165,9 @@ static void time_sk_kernel(const TimingParams &tp, bool first_flag)
     Array<uint> out_rfimask;
 
     if (!first_flag)
-	out_sk_single_feed = Array<float> ({T,F,3,S}, af_zero | af_gpu);
+        out_sk_single_feed = Array<float> ({T,F,3,S}, af_zero | af_gpu);
     if (first_flag)
-	out_rfimask = Array<uint> ({F,(T*params.Nds)/32}, af_zero | af_gpu);
+        out_rfimask = Array<uint> ({F,(T*params.Nds)/32}, af_zero | af_gpu);
     
     string name = tp.name + (first_flag ? " first SkKernel" : " second SkKernel");
     double gb = 4.0e-9 * ninner * out_sk_feed_averaged.size;
@@ -180,11 +180,11 @@ static void time_sk_kernel(const TimingParams &tp, bool first_flag)
 
     KernelTimer kt(nouter);
     while (kt.next()) {
-	for (int i = 0; i < ninner; i++)
-	    kernel.launch(out_sk_feed_averaged, out_sk_single_feed, out_rfimask, in_S012, in_bf_mask, kt.stream);  // calls CUDA_PEEK()
-	if (kt.warmed_up)
-	    cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt)
-		 << ", Real-time fraction = " << (kt.dt / rt) << endl;
+        for (int i = 0; i < ninner; i++)
+            kernel.launch(out_sk_feed_averaged, out_sk_single_feed, out_rfimask, in_S012, in_bf_mask, kt.stream);  // calls CUDA_PEEK()
+        if (kt.warmed_up)
+            cout << name << ": Global memory BW (GB/s) = " << (gb / kt.dt)
+                 << ", Real-time fraction = " << (kt.dt / rt) << endl;
     }
 }
 

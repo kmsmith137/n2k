@@ -65,24 +65,24 @@ __device__ inline uint load_bad_feed_mask(const uint *bf_mask, uint *sp, int S)
     // In each iteration of the loop, we read 128 stations.
     
     for (uint t = t0; t < (S>>2); t += nt) {
-	uint x = __vcmpne4(bf_mask[t], 0);       // s0 s1 s2 s3 s4 s5 s6 <-> b3 b4 t0 t1 t2 t3 t4
-	x = transpose_bit_with_lane<1> (x, 1);   // s0 s1 s2 s3 s4 s5 s6 <-> b3 b4 b0 t1 t2 t3 t4
-	x = transpose_bit_with_lane<2> (x, 2);   // s0 s1 s2 s3 s4 s5 s6 <-> b3 b4 b0 b1 t2 t3 t4
-	x = transpose_bit_with_lane<4> (x, 4);   // s0 s1 s2 s3 s4 s5 s6 <-> b3 b4 b0 b1 b2 t3 t4
+        uint x = __vcmpne4(bf_mask[t], 0);       // s0 s1 s2 s3 s4 s5 s6 <-> b3 b4 t0 t1 t2 t3 t4
+        x = transpose_bit_with_lane<1> (x, 1);   // s0 s1 s2 s3 s4 s5 s6 <-> b3 b4 b0 t1 t2 t3 t4
+        x = transpose_bit_with_lane<2> (x, 2);   // s0 s1 s2 s3 s4 s5 s6 <-> b3 b4 b0 b1 t2 t3 t4
+        x = transpose_bit_with_lane<4> (x, 4);   // s0 s1 s2 s3 s4 s5 s6 <-> b3 b4 b0 b1 b2 t3 t4
 
-	// Shared memory layout:
-	// Define s = 32*shi + slo, and store at shmem[shi].	
-	// FIXME (low-priority) creates a bank conflict if S > 1024, but I doubt this is ever a bottleneck.
+        // Shared memory layout:
+        // Define s = 32*shi + slo, and store at shmem[shi].    
+        // FIXME (low-priority) creates a bank conflict if S > 1024, but I doubt this is ever a bottleneck.
 
-	uint shi = t >> 3;
-	
-	if constexpr (Debug)
-	    assert(shi < bf_mask_shmem_nelts(S));
-	
-	if ((threadIdx.x & 7) == 0)
-	    sp[shi] = x;
+        uint shi = t >> 3;
+        
+        if constexpr (Debug)
+            assert(shi < bf_mask_shmem_nelts(S));
+        
+        if ((threadIdx.x & 7) == 0)
+            sp[shi] = x;
 
-	__syncwarp();
+        __syncwarp();
     }
 
     __syncthreads();
@@ -100,7 +100,7 @@ __device__ inline uint load_bad_feed_mask(const uint *bf_mask, uint *sp, int S)
     shi = (s < S) ? shi : (shi & 31);
 
     if constexpr (Debug)
-	assert(shi < bf_mask_shmem_nelts(S));
+        assert(shi < bf_mask_shmem_nelts(S));
     
     // FIXME (low-priority) optimize for case where we don't need all the transposes.
     

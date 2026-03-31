@@ -134,7 +134,7 @@ correlate_pl_kernel_S16(int *counts, const ulong *pl_mask, const uint *rfimask, 
     const uint f = blockIdx.y * blockDim.y + threadIdx.y;
 
     if ((tout >= Tout) || (f >= F))
-	return;   // okay since this kernel never calls __syncthreads()
+        return;   // okay since this kernel never calls __syncthreads()
 
     // ulong pl_mask[T/64][F][S];
     const uint t128_stride = (2*F) * S;  // 64-bit (ulong) stride
@@ -152,20 +152,20 @@ correlate_pl_kernel_S16(int *counts, const ulong *pl_mask, const uint *rfimask, 
     v[0][0] = v[0][1] = v[1][0] = v[1][1] = v[2][0] = v[2][1] = 0;
 
     for (uint n128 = 0; n128 < N128; n128++) {
-	if ((n128 & 7) == 0) {
-	    rfi = *rfimask;
-	    rfimask += 32;
-	}
+        if ((n128 & 7) == 0) {
+            rfi = *rfimask;
+            rfimask += 32;
+        }
 
-	// Read 16-by-128 PL-submatrix.
-	read_pl_16_128(pl, pl_mask, rfi, n128);
+        // Read 16-by-128 PL-submatrix.
+        read_pl_16_128(pl, pl_mask, rfi, n128);
 
-	// Accumulate 16-by-16 V-matrix.
-	mma_b1_m8_n8_k128(v[0], pl[0], pl[0], v[0]);
-	mma_b1_m8_n8_k128(v[1], pl[1], pl[0], v[1]);
-	mma_b1_m8_n8_k128(v[2], pl[1], pl[1], v[2]);
-	
-	pl_mask += t128_stride;
+        // Accumulate 16-by-16 V-matrix.
+        mma_b1_m8_n8_k128(v[0], pl[0], pl[0], v[0]);
+        mma_b1_m8_n8_k128(v[1], pl[1], pl[0], v[1]);
+        mma_b1_m8_n8_k128(v[2], pl[1], pl[1], v[2]);
+        
+        pl_mask += t128_stride;
     }
     
     // int counts[Tout][F][3][8][8]
@@ -224,42 +224,42 @@ correlate_pl_kernel_S128(int *counts, const ulong *pl_mask, const uint *rfimask,
 
     #pragma unroll
     for (int i = 0; i < 10; i++)
-	v[i][0][0] = v[i][0][1] = v[i][1][0] = v[i][1][1] = 0;
+        v[i][0][0] = v[i][0][1] = v[i][1][0] = v[i][1][1] = 0;
     
     for (uint n128 = 0; n128 < N128; n128++) {
-	if ((n128 & 7) == 0) {
-	    rfi = *rfimask;
-	    rfimask += 32;
-	}
+        if ((n128 & 7) == 0) {
+            rfi = *rfimask;
+            rfimask += 32;
+        }
 
-	// Read 16-by-128 submatrix from global memory.
-	read_pl_16_128(pl_in, pl_mask, rfi, n128);
+        // Read 16-by-128 submatrix from global memory.
+        read_pl_16_128(pl_in, pl_mask, rfi, n128);
 
-	// Write 16-by-128 submatrix to shared memory.
-	shmem[64*w + laneId] = pl_in[0][0];
-	shmem[64*w + laneId + 32] = pl_in[1][0];
-	
-	__syncthreads();
+        // Write 16-by-128 submatrix to shared memory.
+        shmem[64*w + laneId] = pl_in[0][0];
+        shmem[64*w + laneId + 32] = pl_in[1][0];
+        
+        __syncthreads();
 
-	// Read from shared memory.
-	#pragma unroll
-	for (int i = 0; i < 4; i++) {
-	    plx[i][0] = shmem[32*wx + laneId + 128*i];
-	    ply[i][0][0] = shmem[32*wy + laneId + 128*i];
-	    ply[i][1][0] = shmem[32*wy + laneId + 128*i + 64];
-	}
-	
-	__syncthreads();
-	
-	// Do matrix multiplications (20 int1 m8n8k128 MMAs).
+        // Read from shared memory.
+        #pragma unroll
+        for (int i = 0; i < 4; i++) {
+            plx[i][0] = shmem[32*wx + laneId + 128*i];
+            ply[i][0][0] = shmem[32*wy + laneId + 128*i];
+            ply[i][1][0] = shmem[32*wy + laneId + 128*i + 64];
+        }
+        
+        __syncthreads();
+        
+        // Do matrix multiplications (20 int1 m8n8k128 MMAs).
 
-	#pragma unroll
-	for (int i = 0; i < 4; i++)
-	    #pragma unroll
-	    for (int j = 0; j <= i; j++)
-		multiply_8_16(v[(i*(i+1))/2 + j], plx[i], ply[j]);
-	
-	pl_mask += t128_stride;
+        #pragma unroll
+        for (int i = 0; i < 4; i++)
+            #pragma unroll
+            for (int j = 0; j <= i; j++)
+                multiply_8_16(v[(i*(i+1))/2 + j], plx[i], ply[j]);
+        
+        pl_mask += t128_stride;
     }
 
     // Write to global memory.
@@ -282,23 +282,23 @@ correlate_pl_kernel_S128(int *counts, const ulong *pl_mask, const uint *rfimask,
     // Off-diagonals (I > J).
     #pragma unroll
     for (int i = 1; i < 4; i++)
-	#pragma unroll
-	for (int j = 0; j < i; j++)
-	    write_8_16(counts + a*i + 512*i*i + 256*j, v[(i*(i+1))/2 + j]);
+        #pragma unroll
+        for (int j = 0; j < i; j++)
+            write_8_16(counts + a*i + 512*i*i + 256*j, v[(i*(i+1))/2 + j]);
     
     // Diagonals (I = J).
     // We only write if (wx >= wy+2R).
 
     if (wx >= wy) {   // write R=0
-	#pragma unroll
-	for (int i = 0; i < 4; i++)
-	    write_8_8(counts + a*i + 512*i*i + 256*i, v[(i*(i+1))/2 + i][0]);
+        #pragma unroll
+        for (int i = 0; i < 4; i++)
+            write_8_8(counts + a*i + 512*i*i + 256*i, v[(i*(i+1))/2 + i][0]);
     }
 
     if (wx >= wy+2) {  // write R=1
-	#pragma unroll
-	for (int i = 0; i < 4; i++)
-	    write_8_8(counts + a*i + 512*i*i + 256*i + 128, v[(i*(i+1))/2 + i][1]);
+        #pragma unroll
+        for (int i = 0; i < 4; i++)
+            write_8_8(counts + a*i + 512*i*i + 256*i + 128, v[(i*(i+1))/2 + i][1]);
     }
 }
 
@@ -309,51 +309,51 @@ correlate_pl_kernel_S128(int *counts, const ulong *pl_mask, const uint *rfimask,
 void launch_pl_1bit_correlator(int *counts, const ulong *pl_mask, const uint *rfimask, long rfimask_fstride, long T, long F, long Sds, long Nds, cudaStream_t stream)
 {
     if (!counts)
-	throw runtime_error("launch_pl_1bit_correlator: 'counts' must be non-NULL");
+        throw runtime_error("launch_pl_1bit_correlator: 'counts' must be non-NULL");
     if (!pl_mask)
-	throw runtime_error("launch_pl_1bit_correlator: 'pl_mask' must be non-NULL");
+        throw runtime_error("launch_pl_1bit_correlator: 'pl_mask' must be non-NULL");
     if (!rfimask)
-	throw runtime_error("launch_pl_1bit_correlator: 'rfimask' must be non-NULL");
-    if (rfimask_fstride < (T/32))	
-	throw runtime_error("launch_pl_1bit_correlator: expected rfimask_fstride >= T/32");
+        throw runtime_error("launch_pl_1bit_correlator: 'rfimask' must be non-NULL");
+    if (rfimask_fstride < (T/32))       
+        throw runtime_error("launch_pl_1bit_correlator: expected rfimask_fstride >= T/32");
     if (T <= 0)
-	throw runtime_error("launch_pl_1bit_correlator: expected T > 0");
+        throw runtime_error("launch_pl_1bit_correlator: expected T > 0");
     if (F <= 0)
-	throw runtime_error("launch_pl_1bit_correlator: expected F > 0");
+        throw runtime_error("launch_pl_1bit_correlator: expected F > 0");
     if (Sds <= 0)
-	throw runtime_error("launch_pl_1bit_correlator: expected Sds > 0");
+        throw runtime_error("launch_pl_1bit_correlator: expected Sds > 0");
     if (Nds <= 0)
-	throw runtime_error("launch_pl_1bit_correlator: expected Nds > 0");
+        throw runtime_error("launch_pl_1bit_correlator: expected Nds > 0");
     if (Nds & 127)
-	throw runtime_error("launch_pl_1bit_correlator: expected Nds to be a multiple of 128 (could be relaxed)");
+        throw runtime_error("launch_pl_1bit_correlator: expected Nds to be a multiple of 128 (could be relaxed)");
 
     long Tout = T / Nds;
     uint N128 = Nds >> 7;
     
     if (T % Nds)
-	throw runtime_error("launch_pl_1bit_correlator: expected T to be a multiple of Nds");
-    if ((Tout >= INT_MAX) || (N128 >= INT_MAX) || (2*F*Sds >= INT_MAX))	
-	throw runtime_error("launch_pl_1bit_correlator: 32-bit overflow");
+        throw runtime_error("launch_pl_1bit_correlator: expected T to be a multiple of Nds");
+    if ((Tout >= INT_MAX) || (N128 >= INT_MAX) || (2*F*Sds >= INT_MAX)) 
+        throw runtime_error("launch_pl_1bit_correlator: 32-bit overflow");
 
     if (Sds == 16) {
-	dim3 nthreads = {32, 2, 2};
-	dim3 nblocks = { 1, uint(F+1)/2, uint(Tout+1)/2 };
-	
-	correlate_pl_kernel_S16
-	    <<< nblocks, nthreads, 0, stream >>>
-	    (counts, pl_mask, rfimask, rfimask_fstride, Tout, F, N128);
+        dim3 nthreads = {32, 2, 2};
+        dim3 nblocks = { 1, uint(F+1)/2, uint(Tout+1)/2 };
+        
+        correlate_pl_kernel_S16
+            <<< nblocks, nthreads, 0, stream >>>
+            (counts, pl_mask, rfimask, rfimask_fstride, Tout, F, N128);
     }
     else if (Sds == 128) {
-	dim3 nblocks = { 1, uint(F), uint(Tout) };
-	
-	correlate_pl_kernel_S128
-	    <<< nblocks, 256, 0, stream >>>
-	    (counts, pl_mask, rfimask, rfimask_fstride, N128);
+        dim3 nblocks = { 1, uint(F), uint(Tout) };
+        
+        correlate_pl_kernel_S128
+            <<< nblocks, 256, 0, stream >>>
+            (counts, pl_mask, rfimask, rfimask_fstride, N128);
     }
     else {
-	throw runtime_error("launch_pl_1bit_correlator: Currently, only Sds=16 and Sds=128 are implemented."
-			    " These values correspond to the CHORD pathfinder, and full CHORD. Let me know"
-			    " if you need more generality");
+        throw runtime_error("launch_pl_1bit_correlator: Currently, only Sds=16 and Sds=128 are implemented."
+                            " These values correspond to the CHORD pathfinder, and full CHORD. Let me know"
+                            " if you need more generality");
     }
     
     CUDA_PEEK("correlate_pl_kernel");
@@ -376,32 +376,32 @@ void launch_pl_1bit_correlator(Array<int> &counts, const Array<ulong> &pl_mask, 
     long ntiles = ((Sds/8) * ((Sds/8) + 1)) / 2;
 
     if (Nds <= 0)
-	throw runtime_error("launch_pl_1bit_correlator: expected Nds > 0");
+        throw runtime_error("launch_pl_1bit_correlator: expected Nds > 0");
     if (Nds & 127)
-	throw runtime_error("launch_pl_1bit_correlator: expected Nds to be a multiple of 128 (could be relaxed)");
+        throw runtime_error("launch_pl_1bit_correlator: expected Nds to be a multiple of 128 (could be relaxed)");
     if (Sds & 7)
-	throw runtime_error("launch_pl_1bit_correlator: expected Sds to be a multiple of 8");;
+        throw runtime_error("launch_pl_1bit_correlator: expected Sds to be a multiple of 8");;
     if (T % Nds)
-	throw runtime_error("launch_pl_1bit_correlator: expected T to be a multiple of Nds");
+        throw runtime_error("launch_pl_1bit_correlator: expected T to be a multiple of Nds");
 
     if (!counts.shape_equals({T/Nds,F,ntiles,8,8})) {
-	stringstream ss;
-	ss << "launch_pl_1bit_correlator: counts.shape (=" << counts.shape_str() << ")."
-	   << " Based on pl_mask.shape (=" << pl_mask.shape_str() << ") and Nds=" << Nds
-	   << ", expected shape (" << (T/Nds) << "," << F << "," << ntiles << ",8,8)";
-	throw runtime_error(ss.str());
+        stringstream ss;
+        ss << "launch_pl_1bit_correlator: counts.shape (=" << counts.shape_str() << ")."
+           << " Based on pl_mask.shape (=" << pl_mask.shape_str() << ") and Nds=" << Nds
+           << ", expected shape (" << (T/Nds) << "," << F << "," << ntiles << ",8,8)";
+        throw runtime_error(ss.str());
     }
 
     if (!rfimask.shape_equals({F,T/32})) {
-	stringstream ss;
-	ss << "launch_pl_1bit_correlator: rfimask.shape (=" << rfimask.shape_str() << ")."
-	   << " Based on pl_mask.shape (=" << pl_mask.shape_str()
-	   << ", expected shape (" << F << "," << (T/32) << ")";
-	throw runtime_error(ss.str());
+        stringstream ss;
+        ss << "launch_pl_1bit_correlator: rfimask.shape (=" << rfimask.shape_str() << ")."
+           << " Based on pl_mask.shape (=" << pl_mask.shape_str()
+           << ", expected shape (" << F << "," << (T/32) << ")";
+        throw runtime_error(ss.str());
     }
 
     if (rfimask.strides[1] != 1)
-	throw runtime_error("launch_pl_1bit_correlator: expected inner (time) axis of rfimask to be contiguous");
+        throw runtime_error("launch_pl_1bit_correlator: expected inner (time) axis of rfimask to be contiguous");
     
     launch_pl_1bit_correlator(counts.data, pl_mask.data, rfimask.data, rfimask.strides[0], T, F, Sds, Nds, stream);
 }

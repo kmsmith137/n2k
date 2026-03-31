@@ -23,7 +23,7 @@ static Array<ulong> make_random_s012_array(int T, int F, int S)
 
     Array<ulong> ret({T,F,3,S}, af_rhost);
     for (long i = 0; i < ret.size; i++)
-	ret.data[i] = dist(rng);
+        ret.data[i] = dist(rng);
 
     return ret;
 }
@@ -38,7 +38,7 @@ static Array<uint8_t> make_random_bad_feed_mask(int S)
     Array<uint8_t> ret({S}, af_rhost);
     
     for (long i = 0; i < S; i++)
-	ret.data[i] = max(0L, rand_int(-256,256));
+        ret.data[i] = max(0L, rand_int(-256,256));
     
     return ret;
 }
@@ -52,7 +52,7 @@ static Array<uint8_t> make_random_bad_feed_mask(int S)
 static void test_pack_e_array(int T, int F, int S, bool offset_encoded)
 {
     cout << "test_pack_e_array: T=" << T << ", F=" << F << ", S=" << S
-	 << ", offset_encoded=" << offset_encoded << endl;
+         << ", offset_encoded=" << offset_encoded << endl;
     
     Array<complex<int>> E_src = make_random_unpacked_e_array(T,F,S);
     Array<uint8_t> E_packed = pack_e_array(E_src, offset_encoded);
@@ -73,20 +73,20 @@ static void reference_transpose_bit_with_lane(uint dst[32], const uint src[32], 
     assert((lane == 1) || (lane == 2) || (lane == 4) || (lane == 8) || (lane == 16));
 
     for (uint ldst = 0; ldst < 32; ldst++) {
-	dst[ldst] = 0;
-	
-	for (uint bdst = 0; bdst < 32; bdst++) {
-	    uint lsrc = ldst & ~lane;
-	    uint bsrc = bdst & ~bit;
+        dst[ldst] = 0;
+        
+        for (uint bdst = 0; bdst < 32; bdst++) {
+            uint lsrc = ldst & ~lane;
+            uint bsrc = bdst & ~bit;
 
-	    if (ldst & lane)
-		bsrc |= bit;
-	    if (bdst & bit)
-		lsrc |= lane;
-	    
-	    if (src[lsrc] & (1U << bsrc))
-		dst[ldst] |= (1U << bdst);
-	}
+            if (ldst & lane)
+                bsrc |= bit;
+            if (bdst & bit)
+                lsrc |= lane;
+            
+            if (src[lsrc] & (1U << bsrc))
+                dst[ldst] |= (1U << bdst);
+        }
     }
 }
 
@@ -97,16 +97,16 @@ __global__ void transpose_bit_with_lane_kernel(uint *dst, const uint *src, uint 
     uint x = src[threadIdx.x];
 
     if (bit == 1)
-	x = transpose_bit_with_lane<1> (x, lane);
+        x = transpose_bit_with_lane<1> (x, lane);
     else if (bit == 2)
-	x = transpose_bit_with_lane<2> (x, lane);
+        x = transpose_bit_with_lane<2> (x, lane);
     else if (bit == 4)
-	x = transpose_bit_with_lane<4> (x, lane);
+        x = transpose_bit_with_lane<4> (x, lane);
     else if (bit == 8)
-	x = transpose_bit_with_lane<8> (x, lane);
+        x = transpose_bit_with_lane<8> (x, lane);
     else if (bit == 16)
-	x = transpose_bit_with_lane<16> (x, lane);
-	
+        x = transpose_bit_with_lane<16> (x, lane);
+        
     dst[threadIdx.x] = x;
 }
 
@@ -118,7 +118,7 @@ static void test_transpose_bit_with_lane(uint bit, uint lane)
 
     Array<uint> src({32}, af_rhost);
     for (int i = 0; i < 32; i++)
-	src.data[i] = uint(rng()) ^ (uint(rng()) << 16);
+        src.data[i] = uint(rng()) ^ (uint(rng()) << 16);
     
     Array<uint> dst_cpu({32}, af_uhost);
     reference_transpose_bit_with_lane(dst_cpu.data, src.data, bit, lane);
@@ -135,8 +135,8 @@ static void test_transpose_bit_with_lane(uint bit, uint lane)
 static void test_transpose_bit_with_lane()
 {
     for (uint bit = 1; bit <= 16; bit *= 2)
-	for (uint lane = 1; lane <= 16; lane *= 2)
-	    test_transpose_bit_with_lane(bit, lane);
+        for (uint lane = 1; lane <= 16; lane *= 2)
+            test_transpose_bit_with_lane(bit, lane);
 }
 
 
@@ -157,7 +157,7 @@ __global__ void bad_feed_mask_kernel(uint *out, const uint8_t *bf_mask, int S)
 #if 0
     int nt = blockDim.z * blockDim.y * blockDim.x;
     for (int t = t0; t < nt; t += nt)
-	shmem[t] = 0;
+        shmem[t] = 0;
     __syncthreads();
 #endif
 
@@ -181,20 +181,20 @@ static void test_bad_feed_mask(int S, uint Wx, uint Wy, uint Wz)
     out = out.to_host();
 
     for (uint iyz = 0; iyz < Wy*Wz; iyz++) {
-	for (uint ix = 0; ix < 32*Wx; ix++) {
-	    int bit = 0;
-	    for (int s = ix; s < S; s += 32*Wx) {
-		bool bf_cpu = (bf_mask.data[s] != 0);
-		bool bf_gpu = out.data[ix] & (1U << bit);
-		
-		if (bf_cpu != bf_gpu) {
-		    cout << "failed! iyz=" << iyz << ", ix=" << ix << ", s=" << s << ", bit=" << "bf_cpu=" << bf_cpu << ", bf_gpu=" << bf_gpu << endl;
-		    exit(1);
-		}
-		    
-		bit++;
-	    }
-	}
+        for (uint ix = 0; ix < 32*Wx; ix++) {
+            int bit = 0;
+            for (int s = ix; s < S; s += 32*Wx) {
+                bool bf_cpu = (bf_mask.data[s] != 0);
+                bool bf_gpu = out.data[ix] & (1U << bit);
+                
+                if (bf_cpu != bf_gpu) {
+                    cout << "failed! iyz=" << iyz << ", ix=" << ix << ", s=" << s << ", bit=" << "bf_cpu=" << bf_cpu << ", bf_gpu=" << bf_gpu << endl;
+                    exit(1);
+                }
+                    
+                bit++;
+            }
+        }
     }
 }
 
@@ -202,10 +202,10 @@ static void test_bad_feed_mask(int S, uint Wx, uint Wy, uint Wz)
 static void test_bad_feed_mask()
 {
     for (int n = 0; n < 500; n++) {
-	vector<ssize_t> W = random_integers_with_bounded_product(3, 32);  // (Wx, Wy, Wz)
-	int Smax = 1024 * W[0];
-	int S = 128 * rand_int(1, Smax/128 + 1);
-	test_bad_feed_mask(S, W[0], W[1], W[2]);
+        vector<ssize_t> W = random_integers_with_bounded_product(3, 32);  // (Wx, Wy, Wz)
+        int Smax = 1024 * W[0];
+        int S = 128 * rand_int(1, Smax/128 + 1);
+        test_bad_feed_mask(S, W[0], W[1], W[2]);
     }
 }
 
@@ -221,15 +221,15 @@ struct RandCubic
 
     RandCubic() : c(4)
     {
-	ksgpu::randomize(&c[0], 4);
+        ksgpu::randomize(&c[0], 4);
     }
 
     double eval(double x) const
     {
-	double ret = 0.0;
-	for (int i = 0; i < 4; i++)
-	    ret += c[i] * pow(x,i);
-	return ret;
+        double ret = 0.0;
+        for (int i = 0; i < 4; i++)
+            ret += c[i] * pow(x,i);
+        return ret;
     }
 };
 
@@ -239,17 +239,17 @@ static void test_cubic_interpolate()
     cout << "test_cubic_interpolate(): start" << endl;
     
     for (int i = 0; i < 100; i++) {
-	RandCubic c;
-	vector<double> y(4);
+        RandCubic c;
+        vector<double> y(4);
 
-	for (int i = 0; i < 4; i++)
-	    y[i] = c.eval(i-1);
-	
-	double x = ksgpu::rand_uniform();
-	double lhs = cubic_interpolate(x, y[0], y[1], y[2], y[3]);
-	double rhs = c.eval(x);
-	double eps = std::abs(lhs - rhs);
-	assert(eps < 1.0e-12);
+        for (int i = 0; i < 4; i++)
+            y[i] = c.eval(i-1);
+        
+        double x = ksgpu::rand_uniform();
+        double lhs = cubic_interpolate(x, y[0], y[1], y[2], y[3]);
+        double rhs = c.eval(x);
+        double eps = std::abs(lhs - rhs);
+        assert(eps < 1.0e-12);
     }
 
     cout << "test_cubic_interpolate(): pass" << endl;
@@ -275,11 +275,11 @@ static void test_consistency_with_python_interpolation()
     const double *svec = sk_globals::get_debug_s();
 
     for (int i = 0; i < sk_globals::num_debug_checks; i++) {
-	double b = interpolate_bias_cpu(xvec[i], yvec[i]);
-	double s = interpolate_sigma_cpu(xvec[i]);
+        double b = interpolate_bias_cpu(xvec[i], yvec[i]);
+        double s = interpolate_sigma_cpu(xvec[i]);
 
-	assert(fabs(b-bvec[i]) < 1.0e-10);
-	assert(fabs(s-svec[i]) < 1.0e-10);
+        assert(fabs(b-bvec[i]) < 1.0e-10);
+        assert(fabs(s-svec[i]) < 1.0e-10);
     }
 
     cout << "test_consistency_with_python_interpolation(): pass" << endl;
@@ -312,17 +312,17 @@ static void test_load_sigma_coeffs(int T, int N)
     Array<int> ix({T}, af_rhost);
 
     for (int i = 0; i < N; i++) {
-	float x = rand_uniform();
-	for (int j = 0; j < 8; j++)
-	    coeffs.at({i,j}) = x;
+        float x = rand_uniform();
+        for (int j = 0; j < 8; j++)
+            coeffs.at({i,j}) = x;
     }
     
     for (int t = 0; t < T; t++) {
-	int i = rand_int(0, N-3);
-	ix.at({t}) = i;
-	
-	for (int j = 0; j < 4; j++)
-	    out.at({t,j}) = coeffs.at({i+j,0});
+        int i = rand_int(0, N-3);
+        ix.at({t}) = i;
+        
+        for (int j = 0; j < 4; j++)
+            out.at({t,j}) = coeffs.at({i+j,0});
     }
 
     Array<float> out_gpu({T,4}, af_gpu | af_zero);
@@ -340,9 +340,9 @@ static void test_load_sigma_coeffs(int T, int N)
 static void test_load_sigma_coeffs()
 {
     for (int i = 0; i < 10; i++) {
-	int T = 32 * rand_int(1,10);
-	int N = rand_int(10, 100);
-	test_load_sigma_coeffs(T, N);
+        int T = 32 * rand_int(1,10);
+        int N = rand_int(10, 100);
+        test_load_sigma_coeffs(T, N);
     }
 }
 
@@ -375,22 +375,22 @@ static void test_load_bias_coeffs(int T, int N)
     Array<float> yy({T}, af_rhost);
 
     for (int i = 0; i < N; i++)
-	for (int j = 0; j < 4; j++)
-	    coeffs.at({i,j,0}) = coeffs.at({i,j,1}) = rand_uniform();
+        for (int j = 0; j < 4; j++)
+            coeffs.at({i,j,0}) = coeffs.at({i,j,1}) = rand_uniform();
     
     for (int t = 0; t < T; t++) {
-	int i = rand_int(0, N-3);
-	float y = rand_uniform();
-	ix.at({t}) = i;
-	yy.at({t}) = y;
-	
-	for (int j = 0; j < 4; j++) {
-	    float c0 = coeffs.at({i+j,0,0});
-	    float c1 = coeffs.at({i+j,1,0});
-	    float c2 = coeffs.at({i+j,2,0});
-	    float c3 = coeffs.at({i+j,3,0});
-	    out.at({t,j}) = c0 + c1*y + c2*y*y + c3*y*y*y;
-	}
+        int i = rand_int(0, N-3);
+        float y = rand_uniform();
+        ix.at({t}) = i;
+        yy.at({t}) = y;
+        
+        for (int j = 0; j < 4; j++) {
+            float c0 = coeffs.at({i+j,0,0});
+            float c1 = coeffs.at({i+j,1,0});
+            float c2 = coeffs.at({i+j,2,0});
+            float c3 = coeffs.at({i+j,3,0});
+            out.at({t,j}) = c0 + c1*y + c2*y*y + c3*y*y*y;
+        }
     }
 
     Array<float> out_gpu({T,4}, af_gpu | af_zero);
@@ -409,9 +409,9 @@ static void test_load_bias_coeffs(int T, int N)
 static void test_load_bias_coeffs()
 {
     for (int i = 0; i < 10; i++) {
-	int T = 32 * rand_int(1,10);
-	int N = rand_int(10, 100);
-	test_load_bias_coeffs(T, N);
+        int T = 32 * rand_int(1,10);
+        int N = rand_int(10, 100);
+        test_load_bias_coeffs(T, N);
     }
 }
 
@@ -462,12 +462,12 @@ static void test_gpu_interpolation(int T)
     Array<float> s_cpu({T}, af_uhost);
 
     for (int t = 0; t < T; t++) {
-	float x = rand_uniform(xmin, xmax);
-	float y = rand_uniform(0.0, ymax);
-	x_cpu.at({t}) = x;
-	y_cpu.at({t}) = y;
-	b_cpu.at({t}) = interpolate_bias_cpu(x,y);
-	s_cpu.at({t}) = interpolate_sigma_cpu(x);
+        float x = rand_uniform(xmin, xmax);
+        float y = rand_uniform(0.0, ymax);
+        x_cpu.at({t}) = x;
+        y_cpu.at({t}) = y;
+        b_cpu.at({t}) = interpolate_bias_cpu(x,y);
+        s_cpu.at({t}) = interpolate_sigma_cpu(x);
     }
     
     SkKernel::Params params;
@@ -479,7 +479,7 @@ static void test_gpu_interpolation(int T)
     Array<float> s_gpu({T}, af_gpu | af_random);
 
     gpu_interpolation_test_kernel <<<1,T>>>
-	(b_gpu.data, s_gpu.data, x_gpu.data, y_gpu.data, sk_kernel.bsigma_coeffs.data);
+        (b_gpu.data, s_gpu.data, x_gpu.data, y_gpu.data, sk_kernel.bsigma_coeffs.data);
 
     CUDA_PEEK("gpu_interpolation_test_kernel launch");
     CUDA_CALL(cudaDeviceSynchronize());
@@ -492,8 +492,8 @@ static void test_gpu_interpolation(int T)
 static void test_gpu_interpolation()
 {
     for (int i = 0; i < 10; i++) {
-	int T = 32 * rand_int(1,10);
-	test_gpu_interpolation(T);
+        int T = 32 * rand_int(1,10);
+        test_gpu_interpolation(T);
     }
 }
 
@@ -517,24 +517,24 @@ static Array<ulong> reference_s0_kernel(const Array<ulong> &pl_mask, long T, lon
     Array<ulong> s0_arr({Tds, F, S}, af_rhost);
     
     for (long tds = 0; tds < Tds; tds++) {
-	long t2_lo = tds * (Nds >> 1);
-	long t2_hi = (tds+1) * (Nds >> 1);
+        long t2_lo = tds * (Nds >> 1);
+        long t2_hi = (tds+1) * (Nds >> 1);
     
-	for (long fds = 0; fds < Fds; fds++) {
-	    for (long sds = 0; sds < Sds; sds++) {
-		ulong s0_elt = 0;
+        for (long fds = 0; fds < Fds; fds++) {
+            for (long sds = 0; sds < Sds; sds++) {
+                ulong s0_elt = 0;
 
-		for (long t2 = t2_lo; t2 < t2_hi; t2++) {
-		    ulong x = pl_mask.at({t2 >> 6, fds, sds});
-		    ulong bit = 1UL << (t2 & 63);
-		    s0_elt += (x & bit) ? 2 : 0;
-		}
+                for (long t2 = t2_lo; t2 < t2_hi; t2++) {
+                    ulong x = pl_mask.at({t2 >> 6, fds, sds});
+                    ulong bit = 1UL << (t2 & 63);
+                    s0_elt += (x & bit) ? 2 : 0;
+                }
 
-		for (long f = 4*fds; f < min(4*fds+4,F); f++)
-		    for (long s = 8*sds; s < 8*sds+8; s++)
-			s0_arr.at({tds, f, s}) = s0_elt;
-	    }
-	}
+                for (long f = 4*fds; f < min(4*fds+4,F); f++)
+                    for (long s = 8*sds; s < 8*sds+8; s++)
+                        s0_arr.at({tds, f, s}) = s0_elt;
+            }
+        }
     }
 
     return s0_arr;
@@ -562,9 +562,9 @@ static void test_s0_kernel(long T, long F, long S, long Nds, long fstride)
     ulong *pl = pl_mask.data;
     
     for (long i = 0; i < pl_mask.size; i++) {
-	pl[i] = default_rng();
-	pl[i] ^= (ulong(default_rng()) << 22);
-	pl[i] ^= (ulong(default_rng()) << 44);
+        pl[i] = default_rng();
+        pl[i] ^= (ulong(default_rng()) << 22);
+        pl[i] ^= (ulong(default_rng()) << 44);
     }
 
     test_s0_kernel(pl_mask, T, F, S, Nds, fstride);
@@ -574,16 +574,16 @@ static void test_s0_kernel(long T, long F, long S, long Nds, long fstride)
 static void test_s0_kernel()
 {
     for (int i = 0; i < 100; i++) {
-	long Nds = 2 * rand_int(1, 200);
-	long Tdiv = std::lcm(Nds, 128);
-	
-	vector<ssize_t> v = ksgpu::random_integers_with_bounded_product(3, (1000*1000)/Tdiv);
-	long T = v[0]*Tdiv;
-	long F = v[1];
-	long S = v[2]*128;
-	
-	long fstride = 4 * rand_int(S/4, S+1);
-	test_s0_kernel(T, F, S, Nds, fstride);
+        long Nds = 2 * rand_int(1, 200);
+        long Tdiv = std::lcm(Nds, 128);
+        
+        vector<ssize_t> v = ksgpu::random_integers_with_bounded_product(3, (1000*1000)/Tdiv);
+        long T = v[0]*Tdiv;
+        long F = v[1];
+        long S = v[2]*128;
+        
+        long fstride = 4 * rand_int(S/4, S+1);
+        test_s0_kernel(T, F, S, Nds, fstride);
     }
 }
 
@@ -596,7 +596,7 @@ static void test_s0_kernel()
 static void test_s12_kernel(int Tout, int F, int S, int Nds, int fstride, bool offset_encoded)
 {
     cout << "test_s12_kernel: Tout=" << Tout << ", F=" << F << ", S=" << S << ", Nds=" << Nds
-	 << ", fstride=" << fstride << ", offset_encoded=" << offset_encoded << endl;
+         << ", fstride=" << fstride << ", offset_encoded=" << offset_encoded << endl;
 
     long Tin = Tout * Nds;
     Array<complex<int>> e_cpu = make_random_unpacked_e_array(Tin,F,S);  // shape (Tin,F,S)
@@ -611,16 +611,16 @@ static void test_s12_kernel(int Tout, int F, int S, int Nds, int fstride, bool o
 
     // e_cpu -> s_cpu
     for (int tout = 0; tout < Tout; tout++) {
-	for (int tin = tout*Nds; tin < (tout+1)*Nds; tin++) {
-	    for (int f = 0; f < F; f++) {
-		for (int s = 0; s < S; s++) {
-		    complex<int> e = e_cpu.at({tin,f,s});
-		    uint e2 = e.real()*e.real() + e.imag()*e.imag();
-		    s_cpu.at({tout,f,0,s}) += e2;
-		    s_cpu.at({tout,f,1,s}) += e2*e2;
-		}
-	    }
-	}
+        for (int tin = tout*Nds; tin < (tout+1)*Nds; tin++) {
+            for (int f = 0; f < F; f++) {
+                for (int s = 0; s < S; s++) {
+                    complex<int> e = e_cpu.at({tin,f,s});
+                    uint e2 = e.real()*e.real() + e.imag()*e.imag();
+                    s_cpu.at({tout,f,0,s}) += e2;
+                    s_cpu.at({tout,f,1,s}) += e2*e2;
+                }
+            }
+        }
     }
 
     assert_arrays_equal(s_cpu, s_gpu, "cpu", "gpu", {"t","f","n","s"});
@@ -630,15 +630,15 @@ static void test_s12_kernel(int Tout, int F, int S, int Nds, int fstride, bool o
 static void test_s12_kernel()
 {
     for (int n = 0; n < 100; n++) {
-	// (Tout, F, S/128, Nds)
-	vector<ssize_t> v = ksgpu::random_integers_with_bounded_product(4, 400000);
-	long Tout = v[0];
-	long F = v[1];
-	long S = 128 * v[2];
-	long Nds = v[3];
-	int fstride = 4 * rand_int(S/2, S+1);
-	bool offset_encoded = rand_int(0,2);
-	test_s12_kernel(Tout, F, S, Nds, fstride, offset_encoded);
+        // (Tout, F, S/128, Nds)
+        vector<ssize_t> v = ksgpu::random_integers_with_bounded_product(4, 400000);
+        long Tout = v[0];
+        long F = v[1];
+        long S = 128 * v[2];
+        long Nds = v[3];
+        int fstride = 4 * rand_int(S/2, S+1);
+        bool offset_encoded = rand_int(0,2);
+        test_s12_kernel(Tout, F, S, Nds, fstride, offset_encoded);
     }
 }
 
@@ -658,11 +658,11 @@ static void test_s012_time_downsample(int Tout, int F, int S, int Nds)
     Array<ulong> s_out_gpu({Tout,F,3,S}, af_gpu | af_guard);
         
     for (int tout = 0; tout < Tout; tout++)
-	for (int tin = tout*Nds; tin < (tout+1)*Nds; tin++)
-	    for (int f = 0; f < F; f++)
-		for (int n = 0; n < 3; n++)
-		    for (int s = 0; s < S; s++)
-			s_out_cpu.at({tout,f,n,s}) += s_in.at({tin,f,n,s});
+        for (int tin = tout*Nds; tin < (tout+1)*Nds; tin++)
+            for (int f = 0; f < F; f++)
+                for (int n = 0; n < 3; n++)
+                    for (int s = 0; s < S; s++)
+                        s_out_cpu.at({tout,f,n,s}) += s_in.at({tin,f,n,s});
 
     Array<ulong> s_in_gpu = s_in.to_gpu();
     launch_s012_time_downsample_kernel(s_out_gpu, s_in_gpu, Nds);
@@ -675,12 +675,12 @@ static void test_s012_time_downsample(int Tout, int F, int S, int Nds)
 static void test_s012_time_downsample()
 {
     for (int n = 0; n < 100; n++) {
-	vector<ssize_t> v = ksgpu::random_integers_with_bounded_product(4, 100);
-	long Tout = v[0];
-	long F = v[1];
-	long S = 32 * v[2];
-	long Nds = v[3];
-	test_s012_time_downsample(Tout, F, S, Nds);
+        vector<ssize_t> v = ksgpu::random_integers_with_bounded_product(4, 100);
+        long Tout = v[0];
+        long F = v[1];
+        long S = 32 * v[2];
+        long Nds = v[3];
+        test_s012_time_downsample(Tout, F, S, Nds);
     }
 }
 
@@ -701,10 +701,10 @@ static void test_s012_station_downsample(int T, int F, int S)
     Array<ulong> s_out_gpu({T,F,3}, af_gpu | af_guard);
 
     for (int t = 0; t < T; t++)
-	for (int f = 0; f < F; f++)
-	    for (int n = 0; n < 3; n++)
-		for (int s = 0; s < S; s++)
-		    s_out_cpu.at({t,f,n}) += (bf_mask.data[s] ? s_in.at({t,f,n,s}) : 0);
+        for (int f = 0; f < F; f++)
+            for (int n = 0; n < 3; n++)
+                for (int s = 0; s < S; s++)
+                    s_out_cpu.at({t,f,n}) += (bf_mask.data[s] ? s_in.at({t,f,n,s}) : 0);
 
     Array<ulong> s_in_gpu = s_in.to_gpu();
     Array<uint8_t> bf_mask_gpu = bf_mask.to_gpu();
@@ -718,9 +718,9 @@ static void test_s012_station_downsample(int T, int F, int S)
 static void test_s012_station_downsample()
 {
     for (int n = 0; n < 100; n++) {
-	long S = 128 * rand_int(1, rfi_max_stations/128);
-	vector<ssize_t> v = ksgpu::random_integers_with_bounded_product(2, 400000/S);
-	test_s012_station_downsample(v[0], v[1], S);  // (T,F,S)
+        long S = 128 * rand_int(1, rfi_max_stations/128);
+        vector<ssize_t> v = ksgpu::random_integers_with_bounded_product(2, 400000/S);
+        test_s012_station_downsample(v[0], v[1], S);  // (T,F,S)
     }
 }
 
@@ -765,199 +765,199 @@ struct TestInstance
     
     
     TestInstance(long T_, long F_, long S_, long Nds_)
-	: T(T_), F(F_), S(S_), Nds(Nds_)
+        : T(T_), F(F_), S(S_), Nds(Nds_)
     {
-	assert(T > 0);
-	assert(F > 0);
-	assert(S > 0);
-	assert(Nds > 0);
-	assert((S % 128) == 0);
-	assert((Nds % 32) == 0);
-	
-	this->out_sk_feed_averaged = Array<float> ({T,F,3}, af_rhost | af_zero);
-	this->out_sk_single_feed = Array<float> ({T,F,3,S}, af_rhost | af_zero);
-	this->out_rfimask = Array<uint> ({F,(T*Nds)/32}, af_rhost | af_zero);
-	this->in_S012 = Array<ulong> ({T,F,3,S}, af_rhost | af_zero);
-	this->in_bf_mask = Array<uint8_t> ({S}, af_rhost | af_zero);
+        assert(T > 0);
+        assert(F > 0);
+        assert(S > 0);
+        assert(Nds > 0);
+        assert((S % 128) == 0);
+        assert((Nds % 32) == 0);
+        
+        this->out_sk_feed_averaged = Array<float> ({T,F,3}, af_rhost | af_zero);
+        this->out_sk_single_feed = Array<float> ({T,F,3,S}, af_rhost | af_zero);
+        this->out_rfimask = Array<uint> ({F,(T*Nds)/32}, af_rhost | af_zero);
+        this->in_S012 = Array<ulong> ({T,F,3,S}, af_rhost | af_zero);
+        this->in_bf_mask = Array<uint8_t> ({S}, af_rhost | af_zero);
 
-	this->sk_rfimask_sigmas = rand_uniform(0.5, 1.5);
-	this->single_feed_min_good_frac = rand_uniform(0.7, 0.8);
-	this->feed_averaged_min_good_frac = rand_uniform(0.3, 0.4);
-	this->mu_min = rand_uniform(3.0, 4.0);
-	this->mu_max = rand_uniform(20.0, 30.0);
+        this->sk_rfimask_sigmas = rand_uniform(0.5, 1.5);
+        this->single_feed_min_good_frac = rand_uniform(0.7, 0.8);
+        this->feed_averaged_min_good_frac = rand_uniform(0.3, 0.4);
+        this->mu_min = rand_uniform(3.0, 4.0);
+        this->mu_max = rand_uniform(20.0, 30.0);
 
-	this->S0 = vector<long> (S);
-	this->S1 = vector<long> (S);
-	this->S2 = vector<long> (S);
-	this->sf_sk = vector<double> (S);
-	this->sf_bias = vector<double> (S);
-	this->sf_sigma = vector<double> (S);
+        this->S0 = vector<long> (S);
+        this->S1 = vector<long> (S);
+        this->S2 = vector<long> (S);
+        this->sf_sk = vector<double> (S);
+        this->sf_bias = vector<double> (S);
+        this->sf_sigma = vector<double> (S);
 
-	this->_init_bad_feed_mask();
-	
-	for (int t = 0; t < T; t++) {
-	    for (int f = 0; f < F; f++) {
-		this->_init_tf_pair();
+        this->_init_bad_feed_mask();
+        
+        for (int t = 0; t < T; t++) {
+            for (int f = 0; f < F; f++) {
+                this->_init_tf_pair();
 
-		for (int s = 0; s < S; s++) {
-		    this->in_S012.at({t,f,0,s}) = S0[s];
-		    this->in_S012.at({t,f,1,s}) = S1[s];
-		    this->in_S012.at({t,f,2,s}) = S2[s];
-		    this->out_sk_single_feed.at({t,f,0,s}) = sf_sk[s];
-		    this->out_sk_single_feed.at({t,f,1,s}) = sf_bias[s];
-		    this->out_sk_single_feed.at({t,f,2,s}) = sf_sigma[s];
-		}
-		
-		this->out_sk_feed_averaged.at({t,f,0}) = fsum_sk;
-		this->out_sk_feed_averaged.at({t,f,1}) = fsum_bias;
-		this->out_sk_feed_averaged.at({t,f,2}) = fsum_sigma;
+                for (int s = 0; s < S; s++) {
+                    this->in_S012.at({t,f,0,s}) = S0[s];
+                    this->in_S012.at({t,f,1,s}) = S1[s];
+                    this->in_S012.at({t,f,2,s}) = S2[s];
+                    this->out_sk_single_feed.at({t,f,0,s}) = sf_sk[s];
+                    this->out_sk_single_feed.at({t,f,1,s}) = sf_bias[s];
+                    this->out_sk_single_feed.at({t,f,2,s}) = sf_sigma[s];
+                }
+                
+                this->out_sk_feed_averaged.at({t,f,0}) = fsum_sk;
+                this->out_sk_feed_averaged.at({t,f,1}) = fsum_bias;
+                this->out_sk_feed_averaged.at({t,f,2}) = fsum_sigma;
 
-		for (int i = t*(Nds/32); i < (t+1)*(Nds/32); i++)
-		    this->out_rfimask.at({f,i}) = rfimask ? 0xffffffffU : 0;
+                for (int i = t*(Nds/32); i < (t+1)*(Nds/32); i++)
+                    this->out_rfimask.at({f,i}) = rfimask ? 0xffffffffU : 0;
 
-		if (rfimask)
-		    this->rfi_mask_frac += 1.0 / double(F*T);
-	    }
-	}
+                if (rfimask)
+                    this->rfi_mask_frac += 1.0 / double(F*T);
+            }
+        }
     }
 
     static inline double _compute_sk(double s0, double s1, double s2, double b)
     {
-	double u = (s0 > 1.5) ? ((s0+1)/(s0-1)) : 0.0;
-	double v = (s1 > 0.5) ? (s0 / (s1*s1)) : 0.0;
-	return u * (v*s2 - 1) - b;
+        double u = (s0 > 1.5) ? ((s0+1)/(s0-1)) : 0.0;
+        double v = (s1 > 0.5) ? (s0 / (s1*s1)) : 0.0;
+        return u * (v*s2 - 1) - b;
     }
 
     // Inverts (s2 -> sk) at fixed (s0,s1).
     static inline double _invert_sk(double s0, double s1, double sk, double b)
     {
-	double ru = (s0 > 0.5) ? ((s0-1)/(s0+1)) : 0.0;
-	double rv = (s0 > 0.5) ? ((s1*s1) / s0) : 0.0;
-	return rv * (ru*(sk+b) + 1);
+        double ru = (s0 > 0.5) ? ((s0-1)/(s0+1)) : 0.0;
+        double rv = (s0 > 0.5) ? ((s1*s1) / s0) : 0.0;
+        return rv * (ru*(sk+b) + 1);
     }
 
 
     // Helper function called by constructor.
     void _init_bad_feed_mask()
     {
-	// We mask ~5% of the stations.
-	for (int s = 0; s < S; s++)
-	    in_bf_mask.at({s}) = rand_int(0, 21);
+        // We mask ~5% of the stations.
+        for (int s = 0; s < S; s++)
+            in_bf_mask.at({s}) = rand_int(0, 21);
     }
 
 
     // Helper function called by _init_tf_pair().
     void _init_valid_S0_S1(int s)
     {
-	long S0_edge = round(single_feed_min_good_frac * Nds);
-	S0[s] = rand_int(S0_edge+1, Nds+1);
-	
-	long S1_edge0 = round(mu_min * S0[s]);
-	long S1_edge1 = round(mu_max * S0[s]);
-	S1[s] = rand_int(S1_edge0+1, S1_edge1);
+        long S0_edge = round(single_feed_min_good_frac * Nds);
+        S0[s] = rand_int(S0_edge+1, Nds+1);
+        
+        long S1_edge0 = round(mu_min * S0[s]);
+        long S1_edge1 = round(mu_max * S0[s]);
+        S1[s] = rand_int(S1_edge0+1, S1_edge1);
     }
 
 
     // Helper function called by _init_tf_pair().
     void _init_invalid_S0_S1(int s)
     {
-	for (;;) {
-	    S0[s] = rand_int(-Nds/32, Nds+1);
-	    S0[s] = max(S0[s], 0L);
-	    S1[s] = rand_int(0, 98*S0[s]+1);
-	    
-	    long S0_edge = round(single_feed_min_good_frac * Nds);
-	    long S1_edge0 = round(mu_min * S0[s]);
-	    long S1_edge1 = round(mu_max * S0[s]);
+        for (;;) {
+            S0[s] = rand_int(-Nds/32, Nds+1);
+            S0[s] = max(S0[s], 0L);
+            S1[s] = rand_int(0, 98*S0[s]+1);
+            
+            long S0_edge = round(single_feed_min_good_frac * Nds);
+            long S1_edge0 = round(mu_min * S0[s]);
+            long S1_edge1 = round(mu_max * S0[s]);
 
-	    if ((S0[s] < S0_edge) || (S1[s] < S1_edge0) || (S1[s] > S1_edge1))
-		return;
-	}
+            if ((S0[s] < S0_edge) || (S1[s] < S1_edge0) || (S1[s] > S1_edge1))
+                return;
+        }
     }
     
     void _init_tf_pair()
     {
-	double p1 = rand_uniform(-0.2, 1.0);
-	double p2 = rand_uniform(-0.2, 1.0);
-	double prob_sf_valid = max(max(p1,p2), 0.0);
-	
-	// The purpose of this outer loop is to allow restarts, if we end up in
-	// a situation where roundoff error may be an issue for the unit test
-	// (because we're close to a boolean threshold).
-	
-	for (;;) {
-	    double sum_w = 0.0;
-	    double sum_wsk = 0.0;
-	    double sum_wb = 0.0;
-	    double sum_wsigma2 = 0.0;
-	    
-	    for (int s = 0; s < S; s++) {
-		bool sf_valid = (rand_uniform() < prob_sf_valid);
+        double p1 = rand_uniform(-0.2, 1.0);
+        double p2 = rand_uniform(-0.2, 1.0);
+        double prob_sf_valid = max(max(p1,p2), 0.0);
+        
+        // The purpose of this outer loop is to allow restarts, if we end up in
+        // a situation where roundoff error may be an issue for the unit test
+        // (because we're close to a boolean threshold).
+        
+        for (;;) {
+            double sum_w = 0.0;
+            double sum_wsk = 0.0;
+            double sum_wb = 0.0;
+            double sum_wsigma2 = 0.0;
+            
+            for (int s = 0; s < S; s++) {
+                bool sf_valid = (rand_uniform() < prob_sf_valid);
 
-		// Init S0[s], S1[s].
-		if (sf_valid)
-		    _init_valid_S0_S1(s);
-		else
-		    _init_invalid_S0_S1(s);
+                // Init S0[s], S1[s].
+                if (sf_valid)
+                    _init_valid_S0_S1(s);
+                else
+                    _init_invalid_S0_S1(s);
 
-		// Code after this point initializes S2[s].
+                // Code after this point initializes S2[s].
 
-		double s0 = S0[s];
-		double s1 = S1[s];
-		double mu = (s0 > 0.5) ? (s1/s0) : 0.0;
-		double x = sf_valid ? log(mu) : 0.0;
-		double y = sf_valid ? (1.0/s0) : 0.0;
-		double b = sf_valid ? interpolate_bias_cpu(x,y) : 0.0;
-		double sigma = sf_valid ? (interpolate_sigma_cpu(x) * sqrt(y)) : 0.0;
-		double target_sk = 1.0 + sigma * sqrt(3.) * rand_uniform(-1.0,1.0);
-		double s2 = _invert_sk(s0, s1, target_sk, b);
+                double s0 = S0[s];
+                double s1 = S1[s];
+                double mu = (s0 > 0.5) ? (s1/s0) : 0.0;
+                double x = sf_valid ? log(mu) : 0.0;
+                double y = sf_valid ? (1.0/s0) : 0.0;
+                double b = sf_valid ? interpolate_bias_cpu(x,y) : 0.0;
+                double sigma = sf_valid ? (interpolate_sigma_cpu(x) * sqrt(y)) : 0.0;
+                double target_sk = 1.0 + sigma * sqrt(3.) * rand_uniform(-1.0,1.0);
+                double s2 = _invert_sk(s0, s1, target_sk, b);
 
-		s2 = max(s2, s1);
-		s2 = min(s2, 98*s1);		
-		s2 = round(s2);
-		S2[s] = s2;
-		
-		double actual_sk = _compute_sk(s0, s1, s2, b);
+                s2 = max(s2, s1);
+                s2 = min(s2, 98*s1);            
+                s2 = round(s2);
+                S2[s] = s2;
+                
+                double actual_sk = _compute_sk(s0, s1, s2, b);
 
-		sf_sk[s] = sf_valid ? actual_sk : 0.0;
-		sf_bias[s] = sf_valid ? b : 0.0;
-		sf_sigma[s] = sf_valid ? sigma : -1.0;
-		
-		double w = (sf_valid && in_bf_mask.at({s})) ? s0 : 0.0;
-		
-		sum_w += w;
-		sum_wsk += w * sf_sk[s];
-		sum_wb += w * sf_bias[s];
-		sum_wsigma2 += w * w * sf_sigma[s] * sf_sigma[s];
-	    }
+                sf_sk[s] = sf_valid ? actual_sk : 0.0;
+                sf_bias[s] = sf_valid ? b : 0.0;
+                sf_sigma[s] = sf_valid ? sigma : -1.0;
+                
+                double w = (sf_valid && in_bf_mask.at({s})) ? s0 : 0.0;
+                
+                sum_w += w;
+                sum_wsk += w * sf_sk[s];
+                sum_wb += w * sf_bias[s];
+                sum_wsigma2 += w * w * sf_sigma[s] * sf_sigma[s];
+            }
 
-	    double sum_w_threshold = feed_averaged_min_good_frac * S * Nds;
+            double sum_w_threshold = feed_averaged_min_good_frac * S * Nds;
 
-	    if (fabs(sum_w - sum_w_threshold) < 0.1)
-		continue;   // Restart (too close to boolean threshold)
-	    
-	    bool fsum_valid = (sum_w > sum_w_threshold);
+            if (fabs(sum_w - sum_w_threshold) < 0.1)
+                continue;   // Restart (too close to boolean threshold)
+            
+            bool fsum_valid = (sum_w > sum_w_threshold);
 
-	    this->fsum_sk = fsum_valid ? (sum_wsk / sum_w) : 0.0;
-	    this->fsum_bias = fsum_valid ? (sum_wb / sum_w) : 0.0;
-	    this->fsum_sigma = fsum_valid ? (sqrt(sum_wsigma2) / sum_w) : -1.0;
+            this->fsum_sk = fsum_valid ? (sum_wsk / sum_w) : 0.0;
+            this->fsum_bias = fsum_valid ? (sum_wb / sum_w) : 0.0;
+            this->fsum_sigma = fsum_valid ? (sqrt(sum_wsigma2) / sum_w) : -1.0;
 
-	    if (!fsum_valid) {
-		this->rfimask = 0;
-		return;
-	    }
+            if (!fsum_valid) {
+                this->rfimask = 0;
+                return;
+            }
 
-	    // RFI mask is determined by thresholding u.
-	    double u = fabs(fsum_sk - 1.0);
-	    double uthresh = sk_rfimask_sigmas * fsum_sigma;
-	    assert(uthresh > 2.0e-4);
+            // RFI mask is determined by thresholding u.
+            double u = fabs(fsum_sk - 1.0);
+            double uthresh = sk_rfimask_sigmas * fsum_sigma;
+            assert(uthresh > 2.0e-4);
 
-	    if (fabs(u-uthresh) < 1.0e-4)
-		continue;  // Restart (too close to boolean threshold)
-	    
-	    this->rfimask = (u < uthresh);
-	    return;
-	}
+            if (fabs(u-uthresh) < 1.0e-4)
+                continue;  // Restart (too close to boolean threshold)
+            
+            this->rfimask = (u < uthresh);
+            return;
+        }
     }
 };
 
@@ -970,12 +970,12 @@ static void test_sk_kernel(const TestInstance &ti, bool check_sf_sk=true, bool c
     long Nds = ti.Nds;
 
     if (!rfimask_fstride)
-	rfimask_fstride = (T*Nds)/32;
+        rfimask_fstride = (T*Nds)/32;
     
     cout << "test_sk_kernel: T=" << T << ", F=" << F << ", S=" << S << ", Nds=" << Nds
-	 << ", check_sf_sk=" << check_sf_sk << ", check_rfimask=" << check_rfimask
-	 << ", rfimask_fstride=" << rfimask_fstride << ", rfi_mask_frac=" << ti.rfi_mask_frac
-	 << endl;
+         << ", check_sf_sk=" << check_sf_sk << ", check_rfimask=" << check_rfimask
+         << ", rfimask_fstride=" << rfimask_fstride << ", rfi_mask_frac=" << ti.rfi_mask_frac
+         << endl;
     
     // Input arrays
     Array<ulong> gpu_S012 = ti.in_S012.to_gpu();
@@ -987,9 +987,9 @@ static void test_sk_kernel(const TestInstance &ti, bool check_sf_sk=true, bool c
     Array<uint> gpu_rfimask;
 
     if (check_sf_sk)
-	gpu_sk_single_feed = Array<float> ({T,F,3,S}, af_gpu | af_random);
+        gpu_sk_single_feed = Array<float> ({T,F,3,S}, af_gpu | af_random);
     if (check_rfimask)
-	gpu_rfimask = Array<uint> ({F,(T*Nds)/32}, {rfimask_fstride,1}, af_gpu | af_random);
+        gpu_rfimask = Array<uint> ({F,(T*Nds)/32}, {rfimask_fstride,1}, af_gpu | af_random);
 
     // FIXME to reduce cut-and-paste here, modify definition of 'struct TestInstance'
     // to include an SkKernel::Params.
@@ -1005,36 +1005,36 @@ static void test_sk_kernel(const TestInstance &ti, bool check_sf_sk=true, bool c
     
     sk_kernel.launch(
         gpu_sk_feed_averaged,
-	gpu_sk_single_feed,
-	gpu_rfimask,
-	gpu_S012,
-	gpu_bf_mask);
+        gpu_sk_single_feed,
+        gpu_rfimask,
+        gpu_S012,
+        gpu_bf_mask);
 
     CUDA_CALL(cudaDeviceSynchronize());
 
     if (check_sf_sk)
-	ksgpu::assert_arrays_equal(gpu_sk_single_feed, ti.out_sk_single_feed, "gpu_sf_sk", "ref_sf_sk", {"t","f","n","s"});
-	
+        ksgpu::assert_arrays_equal(gpu_sk_single_feed, ti.out_sk_single_feed, "gpu_sf_sk", "ref_sf_sk", {"t","f","n","s"});
+        
     ksgpu::assert_arrays_equal(gpu_sk_feed_averaged, ti.out_sk_feed_averaged, "gpu_fsum_sk", "ref_fsum_sk", {"t","f","n"});
 
     if (check_rfimask)
-	ksgpu::assert_arrays_equal(gpu_rfimask, ti.out_rfimask, "gpu_rfimask", "ref_rfimask", {"f","t32"});
+        ksgpu::assert_arrays_equal(gpu_rfimask, ti.out_rfimask, "gpu_rfimask", "ref_rfimask", {"f","t32"});
 }
 
 
 static void test_sk_kernel()
 {
     for (int n = 0; n < 500; n++) {
-	long T = rand_int(1, 21);
-	long F = rand_int(1, 21);
-	long S = 128 * rand_int(1, rfi_max_stations/128);
-	long Nds = 32 * rand_int(4, 11);
-	bool check_sf_sk = (rand_uniform() < 0.9);
-	bool check_rfimask = (rand_uniform() < 0.9);
-	long rfimask_fstride = rand_int((T*Nds)/32, (T*Nds)/16);
-	
-	TestInstance ti(T,F,S,Nds);
-	test_sk_kernel(ti, check_sf_sk, check_rfimask, rfimask_fstride);
+        long T = rand_int(1, 21);
+        long F = rand_int(1, 21);
+        long S = 128 * rand_int(1, rfi_max_stations/128);
+        long Nds = 32 * rand_int(4, 11);
+        bool check_sf_sk = (rand_uniform() < 0.9);
+        bool check_rfimask = (rand_uniform() < 0.9);
+        long rfimask_fstride = rand_int((T*Nds)/32, (T*Nds)/16);
+        
+        TestInstance ti(T,F,S,Nds);
+        test_sk_kernel(ti, check_sf_sk, check_rfimask, rfimask_fstride);
     }
 }
 

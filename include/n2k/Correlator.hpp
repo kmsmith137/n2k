@@ -84,7 +84,7 @@ public:
     Correlator(const CorrelatorParams &params);
 
     Correlator(int nstations, int nfreq) :
-	Correlator(CorrelatorParams(nstations,nfreq)) { }
+        Correlator(CorrelatorParams(nstations,nfreq)) { }
 
     // The launch() function below launches the correlator kernel.
     //
@@ -158,7 +158,7 @@ public:
     //    the timing quickly settles down.
 
     void launch(int *vis_out, const int8_t *e_in, const uint *rfimask,
-		int nt_outer, int nt_inner, cudaStream_t stream=nullptr, bool sync=false) const;
+                int nt_outer, int nt_inner, cudaStream_t stream=nullptr, bool sync=false) const;
 
     // This version of launch() uses ksgpu::Array objects instead of bare pointers.
     // Both arrays must be allocated on the GPU.
@@ -173,7 +173,7 @@ public:
     // (See previous long comment for indexing logic.)
     
     void launch(ksgpu::Array<int> &vis_out, const ksgpu::Array<int8_t> &e_in, const ksgpu::Array<uint> &rfimask,
-		int nt_outer, int nt_inner, cudaStream_t stream=nullptr, bool sync=false) const;
+                int nt_outer, int nt_inner, cudaStream_t stream=nullptr, bool sync=false) const;
     
     // Initialized by constructor.
     const CorrelatorParams params;

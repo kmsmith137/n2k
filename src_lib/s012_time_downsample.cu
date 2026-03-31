@@ -44,10 +44,10 @@ __global__ void s012_time_downsample_kernel(ulong *Sout, const ulong *Sin, int T
     
     ulong s = 0;
     for (int n = 0; n < Nds; n++)
-	s += Sin[n*M];
+        s += Sin[n*M];
     
     if (valid)
-	Sout[out_base] = s;
+        Sout[out_base] = s;
 }
 
 // launch_s012_time_downsample_kernel(): bare-pointer interface.
@@ -68,28 +68,28 @@ void launch_s012_time_downsample_kernel(ulong *Sout, const ulong *Sin, long T, l
     bool noisy = false;
 
     if ((Sout == nullptr) || (Sin == nullptr))
-	throw runtime_error("launch_s012_time_downsample_kernel(): data pointer was NULL");
+        throw runtime_error("launch_s012_time_downsample_kernel(): data pointer was NULL");
     if (T <= 0)
-	throw runtime_error("launch_s012_time_downsample_kernel(): expected Tds > 0");
+        throw runtime_error("launch_s012_time_downsample_kernel(): expected Tds > 0");
     if (M <= 0)
-	throw runtime_error("launch_s012_time_downsample_kernel(): expected M > 0");
+        throw runtime_error("launch_s012_time_downsample_kernel(): expected M > 0");
     if (M & 31)
-	throw runtime_error("launch_s012_time_downsample_kernel(): expected M to be a multiple of 32");
+        throw runtime_error("launch_s012_time_downsample_kernel(): expected M to be a multiple of 32");
     if (Nds <= 0)
-	throw runtime_error("launch_s012_time_downsample_kernel(): expected Nds > 0");
+        throw runtime_error("launch_s012_time_downsample_kernel(): expected Nds > 0");
     if ((T >= INT_MAX) || (M >= INT_MAX) || (Nds >= INT_MAX))
-	throw runtime_error("launch_s012_time_downsample_kernel(): 32-bit overflow");
+        throw runtime_error("launch_s012_time_downsample_kernel(): 32-bit overflow");
 
     long Tds = T/Nds;
 
     if (T != Tds*Nds)
-	throw runtime_error("launch_s012_time_downsample_kernel(): T must be a multiple of Nds");	
+        throw runtime_error("launch_s012_time_downsample_kernel(): T must be a multiple of Nds");       
     
     dim3 nblocks, nthreads;
     ksgpu::assign_kernel_dims(nblocks, nthreads, M, Tds, 1, threads_per_block, noisy);
 
     s012_time_downsample_kernel <<< nblocks, nthreads, 0, stream >>>
-	(Sout, Sin, Tds, M, Nds);
+        (Sout, Sin, Tds, M, Nds);
 
     CUDA_PEEK("launch s012_time_downsample");
 }
@@ -107,15 +107,15 @@ void launch_s012_time_downsample_kernel(Array<ulong> &Sout, const Array<ulong> &
     check_array(Sin, "launch_s012_time_downsample_kernel", "Sin", 4, true);    // ndim=4, contiguous=true
 
     if (Sin.shape[0] != Sout.shape[0] * Nds)
-	throw runtime_error("launch_s012_time_downsample_kernel(): inconsistent number of time samples in input/output arrays");
+        throw runtime_error("launch_s012_time_downsample_kernel(): inconsistent number of time samples in input/output arrays");
     if (Sin.shape[1] != Sout.shape[1])
-	throw runtime_error("launch_s012_time_downsample_kernel(): inconsistent number of frequency channels in input/output arrays");
+        throw runtime_error("launch_s012_time_downsample_kernel(): inconsistent number of frequency channels in input/output arrays");
     if (Sout.shape[2] != 3)
-	throw runtime_error("launch_s012_time_downsample_kernel(): expected Sout.shape[2] == 3");
+        throw runtime_error("launch_s012_time_downsample_kernel(): expected Sout.shape[2] == 3");
     if (Sin.shape[2] != 3)
-	throw runtime_error("launch_s012_time_downsample_kernel(): expected Sin.shape[2] == 3");
+        throw runtime_error("launch_s012_time_downsample_kernel(): expected Sin.shape[2] == 3");
     if (Sin.shape[3] != Sout.shape[3])
-	throw runtime_error("launch_s012_time_downsample_kernel(): inconsistent number of stations in input/output arrays");
+        throw runtime_error("launch_s012_time_downsample_kernel(): inconsistent number of stations in input/output arrays");
 
     long T = Sin.shape[0];
     long M = 3 * Sin.shape[1] * Sin.shape[3];

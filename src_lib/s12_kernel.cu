@@ -77,7 +77,7 @@ s12_kernel(ulong *S12, const uint *E, int Tds, int F, int S, int Nds, int out_fs
     int Q = (S >> 2);                                        // number of quadruples
 
     if ((tout >= Tds) || (freq >= F) || (sq >= Q))
-	return;
+        return;
     
     // Per-thread pointer shifts.
     // uint S12[Tds][F][2][S];
@@ -90,17 +90,17 @@ s12_kernel(ulong *S12, const uint *E, int Tds, int F, int S, int Nds, int out_fs
     for (uint n = 0; n < Nds; n++) {
         // Get 4 stations (packed into one uint32).
         uint e = E[0] ^ to_offset_encoded;   // offset-encoded
-	E += FQ;
+        E += FQ;
         
         // Unpack uint32 into 4 complex numbers (each with real and imaginary components)
         int e0_re = int(e & 0xf) - 8;
         int e0_im = int((e >> 4) & 0xf) - 8;
         int e1_re = int((e >> 8) & 0xf) - 8;
         int e1_im = int((e >> 12) & 0xf) - 8;
-	int e2_re = int((e >> 16) & 0xf) - 8;
+        int e2_re = int((e >> 16) & 0xf) - 8;
         int e2_im = int((e >> 20) & 0xf) - 8;
-	int e3_re = int((e >> 24) & 0xf) - 8;
-	int e3_im = int((e >> 28) & 0xf) - 8;
+        int e3_re = int((e >> 24) & 0xf) - 8;
+        int e3_im = int((e >> 28) & 0xf) - 8;
 
         // Square/tesseract and sum
         s1_0 += cmplx_square(e0_re, e0_im);
@@ -127,34 +127,34 @@ void launch_s12_kernel(ulong *S12, const uint8_t *E, long T, long F, long S, lon
     // uint4+4  E[T][F][S];
     
     if (!E || !S12)
-	throw runtime_error("launch_s12_kernel: null array pointer was specified");
+        throw runtime_error("launch_s12_kernel: null array pointer was specified");
     if (T <= 0)
-	throw runtime_error("launch_s12_kernel: number of time samples T must be > 0");
+        throw runtime_error("launch_s12_kernel: number of time samples T must be > 0");
     if (F <= 0)
-	throw runtime_error("launch_s12_kernel: number of frequency samples F must be > 0");
+        throw runtime_error("launch_s12_kernel: number of frequency samples F must be > 0");
     if (S <= 0)
-	throw runtime_error("launch_s12_kernel: number of stations S must be > 0");
+        throw runtime_error("launch_s12_kernel: number of stations S must be > 0");
     if (S & 127)
-	throw runtime_error("launch_s12_kernel: number of stations S must be a multiple of 128");
+        throw runtime_error("launch_s12_kernel: number of stations S must be a multiple of 128");
     if (Nds <= 0)
-	throw runtime_error("launch_s12_kernel: downsampling factor 'Nds' must be positive");
+        throw runtime_error("launch_s12_kernel: downsampling factor 'Nds' must be positive");
     if (out_fstride < 2*S)
-	throw runtime_error("launch_s12_kernel: out_fstride must be >= 2*S");	
+        throw runtime_error("launch_s12_kernel: out_fstride must be >= 2*S");   
     if (out_fstride & 3)
-	throw runtime_error("launch_s12_kernel: out_fstride must be a multiple of 4");
+        throw runtime_error("launch_s12_kernel: out_fstride must be a multiple of 4");
     if ((T >= INT_MAX) || (F >= INT_MAX) || (S >= INT_MAX) || (Nds >= INT_MAX) || (out_fstride >= INT_MAX))
-	throw runtime_error("launch_s12_kernel: 32-bit overflow");
+        throw runtime_error("launch_s12_kernel: 32-bit overflow");
 
     long Tds = T/Nds;
 
     if (T != Tds*Nds)
-	throw runtime_error("launch_s12_kernel: T must be a multiple of Nds");	
+        throw runtime_error("launch_s12_kernel: T must be a multiple of Nds");  
 
     dim3 nblocks, nthreads;
     ksgpu::assign_kernel_dims(nblocks, nthreads, S/4, F, Tds);
     
     s12_kernel <<< nblocks, nthreads, 0, stream >>>
-	(S12, (const uint *) E, Tds, F, S, Nds, out_fstride, offset_encoded);
+        (S12, (const uint *) E, Tds, F, S, Nds, out_fstride, offset_encoded);
 
     CUDA_PEEK("s12 kernel launch");
 }
@@ -175,18 +175,18 @@ void launch_s12_kernel(Array<ulong> &S12, const Array<uint8_t> &E, long Nds, boo
     long out_fstride = S12.strides[1];
 
     if (S12.shape[0] * Nds != E.shape[0])
-	throw runtime_error("launch_s12_kernel(): inconsistent number of time samples in S12 and E arrays");
+        throw runtime_error("launch_s12_kernel(): inconsistent number of time samples in S12 and E arrays");
     if (S12.shape[1] != E.shape[1])
-	throw runtime_error("launch_s12_kernel(): inconsistent number of frequency channels in S12 and E arrays");
+        throw runtime_error("launch_s12_kernel(): inconsistent number of frequency channels in S12 and E arrays");
     if (S12.shape[2] != 2)
-	throw runtime_error("launch_s12_kernel(): expected axis 2 of S12 array to have length 2");
+        throw runtime_error("launch_s12_kernel(): expected axis 2 of S12 array to have length 2");
     if (S12.shape[3] != E.shape[2])
-	throw runtime_error("launch_s12_kernel(): inconsistent number of stations in S12 and E arrays");
+        throw runtime_error("launch_s12_kernel(): inconsistent number of stations in S12 and E arrays");
     
     if ((S12.strides[2] != S) || (S12.strides[3] != 1))
-	throw runtime_error("launch_s12_kernel(): expected inner two axes (with shape (2,S)) of S12 array to be contiguous");
+        throw runtime_error("launch_s12_kernel(): expected inner two axes (with shape (2,S)) of S12 array to be contiguous");
     if (S12.strides[0] != F*out_fstride)
-	throw runtime_error("launch_s12_kernel(): expected time+freq axes of S12 to be contiguous");
+        throw runtime_error("launch_s12_kernel(): expected time+freq axes of S12 to be contiguous");
 
     launch_s12_kernel(S12.data, E.data, T, F, S, Nds, out_fstride, offset_encoded, stream);
 }

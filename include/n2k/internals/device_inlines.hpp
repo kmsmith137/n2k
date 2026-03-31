@@ -22,8 +22,8 @@ static __device__ int lop3(int a, int b, int c)
     int d;
     
     asm("lop3.b32 %0, %1, %2, %3, %4;" :
-	"=r"(d) : "r"(a), "r"(b), "r"(c), "n"(immLut)
-	);
+        "=r"(d) : "r"(a), "r"(b), "r"(c), "n"(immLut)
+        );
     
     return d;
 }
@@ -111,13 +111,13 @@ __device__ inline void assert_bank_conflict_free(int bank)
     uint bits = __reduce_or_sync(FULL_MASK, bit);
     
     if constexpr (Verbose) {
-	if (bits != FULL_MASK) {
-	    for (int i = 0; i < 32; i++) {
-		if ((threadIdx.x & 31) == i)
-		    printf("bank_conflict_free assert failed: laneId=%d bank=%d\n", i, bank);
-		__syncwarp();
-	    }
-	}
+        if (bits != FULL_MASK) {
+            for (int i = 0; i < 32; i++) {
+                if ((threadIdx.x & 31) == i)
+                    printf("bank_conflict_free assert failed: laneId=%d bank=%d\n", i, bank);
+                __syncwarp();
+            }
+        }
     }
     
     assert(bits == FULL_MASK);
@@ -131,8 +131,8 @@ __device__ inline T bank_conflict_free_load(const T *p)
     static_assert(sizeof(T) == 4);
     
     if constexpr (Debug) {
-	int bank = (ulong(p) >> 2) & 31;  // assumes sizeof(T)==4
-	assert_bank_conflict_free(bank);
+        int bank = (ulong(p) >> 2) & 31;  // assumes sizeof(T)==4
+        assert_bank_conflict_free(bank);
     }
 
     return *p;
@@ -146,8 +146,8 @@ __device__ inline void bank_conflict_free_store(T *p, T x)
     static_assert(sizeof(T) == 4);
     
     if constexpr (Debug) {
-	int bank = (ulong(p) >> 2) & 31;  // assumes sizeof(T)==4
-	assert_bank_conflict_free(bank);
+        int bank = (ulong(p) >> 2) & 31;  // assumes sizeof(T)==4
+        assert_bank_conflict_free(bank);
     }
 
     *p = x;

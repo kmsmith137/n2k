@@ -19,7 +19,7 @@ extern ksgpu::Array<uint8_t> pack_e_array(const ksgpu::Array<std::complex<int>> 
 
 
 extern void _check_array(int ndim, const ssize_t *shape, const ssize_t *strides, ssize_t size, int aflags,
-			 const char *func_name, const char *arr_name, int expected_ndim, bool contiguous);
+                         const char *func_name, const char *arr_name, int expected_ndim, bool contiguous);
 
 template<typename T>
 inline void check_array(const ksgpu::Array<T> &arr, const char *func_name, const char *arr_name, int expected_ndim, bool contiguous)

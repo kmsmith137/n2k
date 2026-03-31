@@ -75,9 +75,9 @@ __host__ inline void _set_up_cpu_interpolation(int &i, double &t, double x, int 
     t = (x-xmin) / (xmax-xmin) * (nx-1);
 
     if (t < 1-eps)
-	throw std::runtime_error("interpolate_{bias,sigma}_cpu: value of x=log(mu) is too small");
+        throw std::runtime_error("interpolate_{bias,sigma}_cpu: value of x=log(mu) is too small");
     if (t > nx-2+eps)
-	throw std::runtime_error("interpolate_{bias,sigma}_cpu: value of x=log(mu) is too large");
+        throw std::runtime_error("interpolate_{bias,sigma}_cpu: value of x=log(mu) is too large");
 
     i = int(t)-1;
     i = std::max(i,0);
@@ -95,9 +95,9 @@ __host__ inline double interpolate_bias_cpu(double x, double y)
     const double *btab = sk_globals::get_bsigma_coeffs();
 
     if (y < 0.0)
-	throw std::runtime_error("interpolate_bias_cpu: value of y=1/N is negative");
+        throw std::runtime_error("interpolate_bias_cpu: value of y=1/N is negative");
     if (y > ymax + 1.0e-6)
-	throw std::runtime_error("interpolate_bias_cpu: value of y=1/N is too large");
+        throw std::runtime_error("interpolate_bias_cpu: value of y=1/N is too large");
     
     int i;
     double t;
@@ -105,7 +105,7 @@ __host__ inline double interpolate_bias_cpu(double x, double y)
 
     double c[4];
     for (int j = 0; j < 4; j++)
-	c[j] = btab[4*(i+j)] + btab[4*(i+j)+1]*y + btab[4*(i+j)+2]*y*y + btab[4*(i+j)+3]*y*y*y;
+        c[j] = btab[4*(i+j)] + btab[4*(i+j)+1]*y + btab[4*(i+j)+2]*y*y + btab[4*(i+j)+3]*y*y*y;
 
     // Reminder: cubic_interpolate() is defined in include/n2k/interpolation.hpp.
     return cubic_interpolate(t, c[0], c[1], c[2], c[3]);
@@ -238,15 +238,15 @@ __device__ inline void unpack_bias_sigma_coeffs(const float *gp, float *sp)
     
     // Copy global memory (bsigma_coeffs) to shared memory (shmem_tmp_coeffs)
     for (int i = threadId; i < nglo; i += nthreads)
-	sp[i+nsh] = gp[i];
+        sp[i+nsh] = gp[i];
 
     __syncthreads();
 
     // "Unpack" (shmem_tmp_coeffs) -> (shmem_bias_coeffs, shmem_sigma_coeffs)
     for (int i = threadId; i < nsh; i += nthreads) {
-	int ilo = (i < nsh1) ? i : nsh1;
-	int j = (ilo >> 1) + ((i-ilo) >> 3);
-	sp[i] = sp[j+nsh];
+        int ilo = (i < nsh1) ? i : nsh1;
+        int j = (ilo >> 1) + ((i-ilo) >> 3);
+        sp[i] = sp[j+nsh];
     }
     
     __syncthreads();
