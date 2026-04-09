@@ -273,11 +273,15 @@ void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner, int M
     assert(!CorrelatorParams::artificially_remove_output_shuffle);
     assert(!CorrelatorParams::artificially_remove_negate_4bit);
 
+    int gpu_id;
+    CUDA_CALL(cudaGetDevice(&gpu_id));
+
     cout << "\ntest_correlator("
          << "nstations=" << nstations
          << ", nfreq=" << nfreq
          << ", nt_outer=" << nt_outer
          << ", nt_inner=" << nt_inner
+         << ", gpu=" << gpu_id
          << ")" << endl;
 
     Array<int> vmat_cpu({nt_outer,nfreq,nvtiles,16,16,2}, af_rhost | af_zero);
@@ -400,20 +404,27 @@ int main(int argc, char **argv)
     // List of pairs (nstations, nfreq)
     vector<pair<int,int>> kparams = get_all_kernel_params();
     
+    int num_gpus;
+    CUDA_CALL(cudaGetDeviceCount(&num_gpus));
+
     for (auto p: kparams) {
         int nstations = p.first;
         int nfreq = p.second;
-        
+
         int nvtiles = ((nstations/16) * (nstations/16+1)) / 2;
         double nbytes_e = nfreq * nstations;           // multiply by (nt_inner * nt_outer)
         double nbytes_v = 2048.0 * nfreq * nvtiles;    // multiply by (nt_outer)
-        
-        int max_multiplier = int((0.9999*maxbytes - nbytes_v) / (256. * nbytes_e));
-        int nt_inner = 256 * ksgpu::rand_int(1, min(max_multiplier,10)+1, rng);
-        
-        int max_nt_outer = int(maxbytes / (nt_inner*nbytes_e + nbytes_v));
-        int nt_outer = ksgpu::rand_int(1, max_nt_outer+1, rng);
-        test_correlator(nstations, nfreq, nt_outer, nt_inner);
+
+        for (int igpu = 0; igpu < num_gpus; igpu++) {
+            CUDA_CALL(cudaSetDevice(igpu));
+
+            int max_multiplier = int((0.9999*maxbytes - nbytes_v) / (256. * nbytes_e));
+            int nt_inner = 256 * ksgpu::rand_int(1, min(max_multiplier,10)+1, rng);
+
+            int max_nt_outer = int(maxbytes / (nt_inner*nbytes_e + nbytes_v));
+            int nt_outer = ksgpu::rand_int(1, max_nt_outer+1, rng);
+            test_correlator(nstations, nfreq, nt_outer, nt_inner);
+        }
     }
 
     return 0;
