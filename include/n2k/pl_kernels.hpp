@@ -42,8 +42,8 @@ namespace n2k {
 
 // Version 1: bare-pointer interface.
 extern void launch_pl_mask_expander(
-    ulong *pl_out,           // shape (Tout/128, (Fout+3)/4, Sds)
-    const ulong *pl_in,      // shape (Tout/64, F, Sds)
+    ulong *pl_out,           // shape (Tout/64, F, Sds)
+    const ulong *pl_in,      // shape (Tout/128, (Fout+3)/4, Sds)
     long Tout,               // number of time samples (no downsampling factor)
     long Fout,               // number of freq channels (no downsampling factor)
     long Sds,                // number of downsampled stations (after downsampling by 8)
@@ -52,8 +52,8 @@ extern void launch_pl_mask_expander(
 
 // Version 2: ksgpu::Array<> interface.
 extern void launch_pl_mask_expander(
-    ksgpu::Array<ulong> &pl_out,        // shape (Tout/128, (Fout+3)/4, Sds)
-    const ksgpu::Array<ulong> &pl_in,   // shape (Tout/64, F, Sds)
+    ksgpu::Array<ulong> &pl_out,        // shape (Tout/64, F, Sds)
+    const ksgpu::Array<ulong> &pl_in,   // shape (Tout/128, (Fout+3)/4, Sds)
     cudaStream_t stream = 0);
 
 
