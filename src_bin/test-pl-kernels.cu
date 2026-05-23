@@ -36,19 +36,10 @@ inline void double_bits(ulong &y0, ulong &y1, ulong x)
 }
 
 
-inline uint rand_uint(std::mt19937 &rng)
-{
-    uint x = uint(rng());
-    x ^= (uint(rng()) << 16);
-    return x;
-}
-
-
 inline ulong rand_ulong(std::mt19937 &rng)
 {
     ulong x = ulong(rng());
-    x ^= (ulong(rng()) << 22);
-    x ^= (ulong(rng()) << 44);
+    x |= (ulong(rng()) << 32);
     return x;
 }
 
@@ -134,7 +125,7 @@ static void test_pl_1bit_correlator(long T, long F, long Sds, long Nds, long rfi
 
     for (long f = 0; f < F; f++)
         for (long t32 = 0; t32 < T/32; t32++)
-            rfimask_cpu.data[f*rfimask_fstride + t32] = rand_uint(rng);
+            rfimask_cpu.data[f*rfimask_fstride + t32] = uint(rng());
     
     Array<ulong> pl_gpu = pl_cpu.to_gpu();
     Array<uint> rfimask_gpu({F,T/32}, {rfimask_fstride,1}, af_gpu | af_guard);  // note fstride

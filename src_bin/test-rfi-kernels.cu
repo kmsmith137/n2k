@@ -118,7 +118,7 @@ static void test_transpose_bit_with_lane(uint bit, uint lane)
 
     Array<uint> src({32}, af_rhost);
     for (int i = 0; i < 32; i++)
-        src.data[i] = uint(rng()) ^ (uint(rng()) << 16);
+        src.data[i] = uint(rng());
     
     Array<uint> dst_cpu({32}, af_uhost);
     reference_transpose_bit_with_lane(dst_cpu.data, src.data, bit, lane);
@@ -563,9 +563,8 @@ static void test_s0_kernel(long T, long F, long S, long Nds, long fstride)
 
     std::mt19937 &rng = ksgpu::default_rng();
     for (long i = 0; i < pl_mask.size; i++) {
-        pl[i] = rng();
-        pl[i] ^= (ulong(rng()) << 22);
-        pl[i] ^= (ulong(rng()) << 44);
+        pl[i] = ulong(rng());
+        pl[i] |= (ulong(rng()) << 32);
     }
 
     test_s0_kernel(pl_mask, T, F, S, Nds, fstride);

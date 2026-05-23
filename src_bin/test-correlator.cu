@@ -102,10 +102,8 @@ __host__ void test_transpose_rank8_4bit()
 
     std::mt19937 &rng = ksgpu::default_rng();
     for (int i = 0; i < nelts; i++) {
-        // Make 32 random bits.
-        uint x = rng();
-        uint y = rng();
-        src_cpu.data[i] = x ^ (y << 16);
+        // 32 random bits per mt19937 draw.
+        src_cpu.data[i] = rng();
     }
 
     Array<int> dst_cpu = src_cpu.clone();
