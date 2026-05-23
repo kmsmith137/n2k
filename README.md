@@ -1,7 +1,10 @@
-Build instructions:
+Build instructions.
 ```
-git clone https://github.com/kmsmith137/gputils
-cd gputils
+# NOTE need 'chord' branch of ksgpu, not main branch!
+# This is part of some unfortunate branch divergence issues that will be fixed soon.
+git clone https://github.com/kmsmith137/ksgpu
+cd ksgpu
+git checkout chord
 make -j
 cd ..
 
