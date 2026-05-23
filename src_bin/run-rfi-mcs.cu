@@ -172,15 +172,16 @@ struct RunState
         // No masks for now (might put these in later but I don't think it's a high priority)
         memset(bf_mask_cpu.data, 0xff, bf_mask_cpu.size);
         memset(pl_mask_cpu.data, 0xff, pl_mask_cpu.size * sizeof(ulong));
-        
+
         int8_t bits = offset_encoded ? 0x88 : 0;
         std::normal_distribution<double> dist(0, 1.0);
+        std::mt19937 &rng = ksgpu::default_rng();
 
         for (long t = 0; t < T; t++) {
             for (long f = 0; f < F; f++) {
                 for (long s = 0; s < S; s++) {
-                    int ex = quantize(rms * dist(ksgpu::default_rng));
-                    int ey = quantize(rms * dist(ksgpu::default_rng));
+                    int ex = quantize(rms * dist(rng));
+                    int ey = quantize(rms * dist(rng));
                     int8_t e44 = ((ex & 0xf) | ((ey & 0xf) << 4)) ^ bits;
                     E_cpu.data[t*F*S + f*S + s] = e44;
                 }
@@ -269,6 +270,8 @@ struct RunState
 
 int main(int argc, char **argv)
 {
+    ksgpu::seed_default_rng(137);   // reproducible run; remove for full randomness
+
     if (argc != 2) {
         cerr << "Usage: test-sk-bias <rms>" << endl;
         return 2;

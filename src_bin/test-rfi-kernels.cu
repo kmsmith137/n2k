@@ -18,7 +18,7 @@ using namespace ksgpu;
 // FIXME improve make_random_s012_array()?
 static Array<ulong> make_random_s012_array(int T, int F, int S)
 {
-    std::mt19937 &rng = ksgpu::default_rng;
+    std::mt19937 &rng = ksgpu::default_rng();
     auto dist = std::uniform_int_distribution<uint>(0, 1000);
 
     Array<ulong> ret({T,F,3,S}, af_rhost);
@@ -114,7 +114,7 @@ __global__ void transpose_bit_with_lane_kernel(uint *dst, const uint *src, uint 
 static void test_transpose_bit_with_lane(uint bit, uint lane)
 {
     cout << "test_transpose_bit_with_lane: bit=" << bit << ", lane=" << lane << endl;
-    std::mt19937 &rng = ksgpu::default_rng;
+    std::mt19937 &rng = ksgpu::default_rng();
 
     Array<uint> src({32}, af_rhost);
     for (int i = 0; i < 32; i++)
@@ -560,11 +560,12 @@ static void test_s0_kernel(long T, long F, long S, long Nds, long fstride)
 {
     Array<ulong> pl_mask({T/128, (F+3)/4, S/8}, af_rhost);
     ulong *pl = pl_mask.data;
-    
+
+    std::mt19937 &rng = ksgpu::default_rng();
     for (long i = 0; i < pl_mask.size; i++) {
-        pl[i] = default_rng();
-        pl[i] ^= (ulong(default_rng()) << 22);
-        pl[i] ^= (ulong(default_rng()) << 44);
+        pl[i] = rng();
+        pl[i] ^= (ulong(rng()) << 22);
+        pl[i] ^= (ulong(rng()) << 44);
     }
 
     test_s0_kernel(pl_mask, T, F, S, Nds, fstride);
@@ -1044,6 +1045,8 @@ static void test_sk_kernel()
 
 int main(int argc, char **argv)
 {
+    ksgpu::seed_default_rng(137);   // reproducible run; remove for full randomness
+
     test_pack_e_array(16, 32, 128, false);  // offset_encoded=false
     test_pack_e_array(16, 32, 128, true);   // offset_encoded=true
     test_transpose_bit_with_lane();

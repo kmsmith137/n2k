@@ -36,19 +36,19 @@ inline void double_bits(ulong &y0, ulong &y1, ulong x)
 }
 
 
-inline uint rand_uint()
+inline uint rand_uint(std::mt19937 &rng)
 {
-    uint x = uint(ksgpu::default_rng());
-    x ^= (uint(ksgpu::default_rng()) << 16);
+    uint x = uint(rng());
+    x ^= (uint(rng()) << 16);
     return x;
 }
 
 
-inline ulong rand_ulong()
+inline ulong rand_ulong(std::mt19937 &rng)
 {
-    ulong x = ulong(ksgpu::default_rng());
-    x ^= (ulong(ksgpu::default_rng()) << 22);
-    x ^= (ulong(ksgpu::default_rng()) << 44);
+    ulong x = ulong(rng());
+    x ^= (ulong(rng()) << 22);
+    x ^= (ulong(rng()) << 44);
     return x;
 }
 
@@ -66,8 +66,9 @@ static void test_pl_mask_expander(long Tout, long Fout, long Sds)
     Array<ulong> pl_out_cpu({Tout/64,Fout,Sds}, af_uhost);
     Array<ulong> pl_out_gpu({Tout/64,Fout,Sds}, af_gpu | af_guard);
 
+    std::mt19937 &rng = ksgpu::default_rng();
     for (long i = 0; i < pl_in_cpu.size; i++)
-        pl_in_cpu.data[i] = rand_ulong();
+        pl_in_cpu.data[i] = rand_ulong(rng);
 
     Array<ulong> pl_in_gpu = pl_in_cpu.to_gpu();
     launch_pl_mask_expander(pl_out_gpu, pl_in_gpu);
@@ -126,12 +127,14 @@ static void test_pl_1bit_correlator(long T, long F, long Sds, long Nds, long rfi
     Array<int> counts_cpu({Tout,F,ntiles,8,8}, af_uhost);
     Array<int> counts_gpu({Tout,F,ntiles,8,8}, af_gpu | af_guard);
 
+    std::mt19937 &rng = ksgpu::default_rng();
+
     for (long i = 0; i < pl_cpu.size; i++)
-        pl_cpu.data[i] = rand_ulong();
+        pl_cpu.data[i] = rand_ulong(rng);
 
     for (long f = 0; f < F; f++)
         for (long t32 = 0; t32 < T/32; t32++)
-            rfimask_cpu.data[f*rfimask_fstride + t32] = rand_uint();
+            rfimask_cpu.data[f*rfimask_fstride + t32] = rand_uint(rng);
     
     Array<ulong> pl_gpu = pl_cpu.to_gpu();
     Array<uint> rfimask_gpu({F,T/32}, {rfimask_fstride,1}, af_gpu | af_guard);  // note fstride
@@ -180,17 +183,19 @@ static void test_pl_1bit_correlator(long T, long F, long Sds, long Nds, long rfi
 
 static void test_pl_1bit_correlator()
 {
+    std::mt19937 &rng = ksgpu::default_rng();
+
     for (int n = 0; n < 100; n++) {
         // For now, only Sds=16 and Sds=128 are implemented.
-        long Sds = rand_int(0,2) ? 16 : 128;
-        
+        long Sds = rand_int(0, 2, rng) ? 16 : 128;
+
         // v = (T/Nds, F, Nds/128)
-        vector<ssize_t> v = ksgpu::random_integers_with_bounded_product(3, 10*1000*1000/(Sds*Sds));
+        vector<ssize_t> v = ksgpu::random_integers_with_bounded_product(3, 10*1000*1000/(Sds*Sds), rng);
         long Nds = v[2] * 128;
         long F = v[1];
         long T = v[0] * Nds;
-        long rfimask_fstride = rand_int(T/32, T/16);
-        
+        long rfimask_fstride = rand_int(T/32, T/16, rng);
+
         test_pl_1bit_correlator(T, F, Sds, Nds, rfimask_fstride);
     }
 }
@@ -201,6 +206,8 @@ static void test_pl_1bit_correlator()
 
 int main(int argc, char **argv)
 {
+    ksgpu::seed_default_rng(137);   // reproducible run; remove for full randomness
+
     test_pl_mask_expander();
     test_pl_1bit_correlator();
     return 0;

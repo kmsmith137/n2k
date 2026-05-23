@@ -100,10 +100,11 @@ __host__ void test_transpose_rank8_4bit()
 
     Array<int> src_cpu({nelts}, af_rhost);
 
+    std::mt19937 &rng = ksgpu::default_rng();
     for (int i = 0; i < nelts; i++) {
         // Make 32 random bits.
-        uint x = ksgpu::default_rng();
-        uint y = ksgpu::default_rng();
+        uint x = rng();
+        uint y = rng();
         src_cpu.data[i] = x ^ (y << 16);
     }
 
@@ -292,10 +293,14 @@ void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner, int M
     Array<uint> rfimask({nfreq,nt_tot/32}, af_rhost | af_zero);
 
     // Randomize rfimask.
-    // Note: I checked that ksgpu::default_rng() returns a uint in which all bits are random.
-    
-    for (int i = 0; i < rfimask.size; i++)
-        rfimask.data[i] = ksgpu::default_rng();
+    // Note: I checked that ksgpu::default_rng()() (i.e. mt19937::operator()) returns
+    // a uint in which all bits are random.
+
+    {
+        std::mt19937 &rng = ksgpu::default_rng();
+        for (int i = 0; i < rfimask.size; i++)
+            rfimask.data[i] = rng();
+    }
     
     vector<int> ix(nstations);
     for (int i = 0; i < nstations; i++)
@@ -385,6 +390,8 @@ void test_correlator(int nstations, int nfreq, int nt_outer, int nt_inner, int M
 
 int main(int argc, char **argv)
 {
+    ksgpu::seed_default_rng(137);   // reproducible run; remove for full randomness
+
     test_negate_4bit();
     test_transpose_rank8_4bit();
 
