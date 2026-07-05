@@ -1,3 +1,5 @@
+## CUDA kernels for chord (tensor-core visibility matrix, fast rfi flagging)
+
 The n2k library contains:
 
   - An int4+4 GPU visibility matrix kernel with a boolean RFI mask.
